@@ -1,0 +1,31 @@
+{
+  "name": "sage",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsx src/index.tsx",
+    "build": "tsc",
+    "dev": "tsx watch src/index.tsx"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/usetig/sage.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/usetig/sage/issues"
+  },
+  "homepage": "https://github.com/usetig/sage#readme",
+  "dependencies": {
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.2",
+    "ink": "^6.3.1",
+    "react": "^19.2.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
