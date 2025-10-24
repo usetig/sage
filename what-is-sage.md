@@ -25,6 +25,15 @@ Coding agents (Claude Code) can sound confident while being wrong or incomplete.
 
 ---
 
+## v0 CLI status
+
+- `sage` launches a TUI that lists Claude Code sessions discovered under `~/.claude/projects/**`. Use the arrow keys to pick one for review.
+- Selecting a session runs `specstory sync claude -u <sessionId> --output-dir .sage/sessions/<sessionId>` (with version checks disabled), verifies the export marker, and forwards the transcript to OpenAI Codex.
+- Requirements: SpecStory CLI installed on the PATH, valid Codex credentials, and prior Claude activity in the repository.
+- Continuous hooks and incremental reviews remain TODO; the current build handles one-shot critiques per selection.
+
+---
+
 ## Roles
 
 - **Primary agent:** **Claude Code** (the tool the user actively chats with).

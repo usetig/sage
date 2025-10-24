@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/usetig/sage#readme",
   "dependencies": {
+    "@openai/codex-sdk": "^0.48.0",
     "@types/node": "^24.9.1",
     "@types/react": "^19.2.2",
     "ink": "^6.3.1",
