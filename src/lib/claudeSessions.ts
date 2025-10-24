@@ -6,7 +6,8 @@ import readline from 'readline';
 export interface ClaudeSessionMetadata {
   sessionId: string;
   cwd: string;
-  firstMessage: string;
+  title: string;
+  initialPrompt: string;
   timestamp: string | null;
   projectDir: string;
   logPath: string;
@@ -72,6 +73,19 @@ function normalizeMessage(raw: unknown): string {
   return '';
 }
 
+function isMainUserPrompt(parsed: any): boolean {
+  if (parsed?.isSidechain) return false;
+  if (parsed?.type === 'user') return parsed.parentUuid === null || parsed.parentUuid === undefined;
+  return parsed?.message?.role === 'user' && !parsed.isSidechain;
+}
+
+function extractTimestamp(parsed: any): string | null {
+  if (typeof parsed?.timestamp === 'string') return parsed.timestamp;
+  if (typeof parsed?.createdAt === 'string') return parsed.createdAt;
+  if (parsed?.message && typeof parsed.message?.timestamp === 'string') return parsed.message.timestamp;
+  return null;
+}
+
 async function safeReadDir(dirPath: string): Promise<Dirent[]> {
   try {
     return await fs.readdir(dirPath, { withFileTypes: true });
@@ -97,15 +111,12 @@ async function readSessionMetadata(
   const accumulator: {
     sessionId?: string;
     cwd?: string;
-    firstMessage?: string;
+    title?: string;
     timestamp?: string;
   } = {};
 
-  let linesRead = 0;
-
   try {
     for await (const line of rl) {
-      linesRead += 1;
       if (!line.trim()) continue;
 
       let parsed: any;
@@ -129,17 +140,12 @@ async function readSessionMetadata(
         accumulator.timestamp = parsed.createdAt;
       }
 
-      if (!accumulator.firstMessage && parsed.message?.content) {
+      if (!accumulator.title && isMainUserPrompt(parsed) && parsed.message?.content) {
         const normalized = normalizeMessage(parsed.message.content);
-        if (normalized) accumulator.firstMessage = normalized;
-      }
-
-      if (accumulator.sessionId && accumulator.cwd && accumulator.firstMessage && accumulator.timestamp) {
-        break;
-      }
-
-      if (linesRead >= 200) {
-        break;
+        if (normalized) {
+          accumulator.title = normalized;
+          break;
+        }
       }
     }
   } finally {
@@ -149,7 +155,7 @@ async function readSessionMetadata(
 
   const sessionId = accumulator.sessionId ?? fileName.replace(/\.jsonl$/, '');
   const cwd = accumulator.cwd ?? defaultCwd;
-  const firstMessage = accumulator.firstMessage ?? '';
+  const title = accumulator.title ?? 'Untitled session';
   const timestamp = accumulator.timestamp ?? null;
 
   if (!sessionId) return null;
@@ -157,7 +163,8 @@ async function readSessionMetadata(
   return {
     sessionId,
     cwd,
-    firstMessage,
+    title,
+    initialPrompt: title,
     timestamp,
   };
 }

@@ -26,6 +26,11 @@ export default function App() {
 
   useInput((input: string, key: Key) => {
     if (screen === 'session-list' && sessions.length) {
+      if (input.toLowerCase() === 'r') {
+        void reloadSessions();
+        return;
+      }
+
       if (key.upArrow) {
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
         return;
@@ -49,7 +54,7 @@ export default function App() {
     if (screen === 'result' && input.toLowerCase() === 'b') {
       setReview(null);
       setActiveSession(null);
-      setScreen('session-list');
+      void reloadSessions();
       return;
     }
 
@@ -146,7 +151,7 @@ export default function App() {
             ))}
           </Box>
           <Box marginTop={1}>
-            <Text dimColor>Use ↑ ↓ to move, ↵ to review. ● marks this repo.</Text>
+            <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh. ● marks this repo.</Text>
           </Box>
         </Box>
       )}
@@ -196,7 +201,7 @@ interface SessionRowProps {
 function SessionRow({ session, index, isSelected }: SessionRowProps) {
   const timestamp = session.timestamp ? formatRelativeTime(session.timestamp) : 'Unknown time';
   const bullet = session.isCurrentRepo ? '●' : '○';
-  const prompt = session.firstMessage ? truncate(session.firstMessage, 60) : '(no prompt recorded)';
+  const prompt = session.title ? truncate(session.title, 60) : '(no prompt recorded)';
 
   return (
     <Box>
