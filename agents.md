@@ -105,7 +105,7 @@ SpecStory sync (src/lib/specstory.ts)
 
 **Avoid this:**
 
-- Don’t rely on undocumented SpecStory flags. Stick to `specstory sync claude -s`.
+- Don’t rely on undocumented SpecStory flags. Stick to `specstory sync claude --output-dir …`.
 - Don’t mutate `process.cwd()` or assume Codex will operate in a specific directory unless you pass the right context (future enhancement).
 - Avoid duplicating exports. If you need additional metadata from Claude logs, extend the parser rather than shelling out multiple times.
 - Don’t silently swallow errors from SpecStory or Codex; surface meaningful messages in the UI.
@@ -130,7 +130,7 @@ SpecStory sync (src/lib/specstory.ts)
 | Session filtering logic | `src/lib/claudeSessions.ts` |
 | SpecStory wrapper | `src/lib/specstory.ts` |
 | Codex prompt builder | `src/lib/codex.ts` |
-| Manual SpecStory export | `specstory sync claude -s <sessionId> --output-dir .sage/sessions/<sessionId>` |
+| Manual SpecStory export | `specstory sync claude --output-dir .sage/history` |
 
 ---
 

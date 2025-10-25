@@ -1,20 +1,37 @@
+import { createHash } from 'crypto';
 import path from 'path';
-import React, { useEffect, useState } from 'react';
+import { promises as fs } from 'fs';
+import chokidar, { FSWatcher } from 'chokidar';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Key } from 'ink';
+import type { Thread } from '@openai/codex-sdk';
 import {
   listSpecstorySessions,
   syncSpecstoryHistory,
   type SpecstorySessionSummary,
 } from '../lib/specstory.js';
-import { performInitialReview, type ReviewResult } from '../lib/review.js';
+import { extractTurns, type TurnSummary } from '../lib/markdown.js';
+import {
+  performInitialReview,
+  performIncrementalReview,
+  type ReviewResult,
+} from '../lib/review.js';
+import { ensureStopHookConfigured } from '../lib/hooks.js';
 
-type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'result';
+type Screen = 'loading' | 'error' | 'session-list' | 'running';
 
 const repositoryPath = path.resolve(process.cwd());
 
 interface CompletedReview extends ReviewResult {
   session: SpecstorySessionSummary;
+}
+
+interface ReviewQueueItem {
+  sessionId: string;
+  markdownPath: string;
+  turns: TurnSummary[];
+  promptPreview: string;
 }
 
 export default function App() {
@@ -24,7 +41,16 @@ export default function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [activeSession, setActiveSession] = useState<SpecstorySessionSummary | null>(null);
-  const [review, setReview] = useState<CompletedReview | null>(null);
+  const [reviews, setReviews] = useState<CompletedReview[]>([]);
+  const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
+  const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
+
+  const queueRef = useRef<ReviewQueueItem[]>([]);
+  const workerRunningRef = useRef(false);
+  const watcherRef = useRef<FSWatcher | null>(null);
+  const lastProcessedVersionRef = useRef<string | null>(null);
+  const codexThreadRef = useRef<Thread | null>(null);
+  const lastTurnSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     void reloadSessions();
@@ -49,19 +75,17 @@ export default function App() {
 
       if (key.return) {
         const session = sessions[selectedIndex];
-        setActiveSession(session);
-        setStatusMessages([]);
-        setScreen('running');
-        void runReview(session);
+        void handleSessionSelection(session);
         return;
       }
     }
 
-    if (screen === 'result' && input.toLowerCase() === 'b') {
-      setReview(null);
-      setActiveSession(null);
-      void reloadSessions();
-      return;
+    if (screen === 'running') {
+      const lower = input.toLowerCase();
+      if (lower === 'b') {
+        void handleExitContinuousMode();
+        return;
+      }
     }
 
     if (screen === 'error' && input.toLowerCase() === 'r') {
@@ -71,12 +95,292 @@ export default function App() {
     }
   });
 
+  useEffect(() => {
+    return () => {
+      void cleanupWatcher();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (screen !== 'running') return;
+    if (!activeSession) return;
+    if (workerRunningRef.current) return;
+    if (queueRef.current.length === 0) return;
+    void processQueue();
+  }, [screen, activeSession, queue.length]);
+
+  async function handleSessionSelection(session: SpecstorySessionSummary) {
+    await resetContinuousState();
+    setActiveSession(session);
+    setScreen('running');
+    setStatusMessages(['Running initial review…']);
+
+    try {
+      await syncSpecstoryHistory();
+      const versionBefore = await getFileVersion(session.markdownPath);
+      if (versionBefore) {
+        lastProcessedVersionRef.current = versionBefore;
+      }
+
+      const result = await performInitialReview(
+        { sessionId: session.sessionId, markdownPath: session.markdownPath },
+        (message) => setStatusMessages((prev) => [...prev, message]),
+      );
+
+      codexThreadRef.current = result.thread;
+
+      const latestTurn = result.turns.length ? result.turns[result.turns.length - 1] : null;
+      lastTurnSignatureRef.current = latestTurn ? computeTurnSignature(latestTurn) : null;
+
+      setReviews([
+        {
+          critique: result.critique,
+          markdownPath: result.markdownPath,
+          latestPrompt: result.latestPrompt,
+          session,
+        },
+      ]);
+
+      const versionAfter = await getFileVersion(session.markdownPath);
+      if (versionAfter) {
+        lastProcessedVersionRef.current = versionAfter;
+      }
+
+      setStatusMessages([]);
+
+      await startWatcher(session);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Initial review failed. Please try again.';
+      setError(message);
+      await resetContinuousState();
+      setScreen('error');
+    }
+  }
+
+  async function handleExitContinuousMode() {
+    await resetContinuousState();
+    setScreen('session-list');
+  }
+
+  async function resetContinuousState() {
+    await cleanupWatcher();
+    queueRef.current = [];
+    setQueue([]);
+    workerRunningRef.current = false;
+    setCurrentJob(null);
+    setReviews([]);
+    setStatusMessages([]);
+    setActiveSession(null);
+    lastProcessedVersionRef.current = null;
+    codexThreadRef.current = null;
+    lastTurnSignatureRef.current = null;
+  }
+
+  async function cleanupWatcher() {
+    if (watcherRef.current) {
+      await watcherRef.current.close().catch(() => undefined);
+      watcherRef.current = null;
+    }
+  }
+
+  function enqueueJob(job: ReviewQueueItem) {
+    if (!job.turns.length) return;
+    queueRef.current = [...queueRef.current, job];
+    setQueue(queueRef.current);
+    setStatusMessages((prev) => [...prev, `Queued review: ${job.promptPreview}`]);
+    if (!workerRunningRef.current) {
+      void processQueue();
+    }
+  }
+
+  async function processQueue(): Promise<void> {
+    if (workerRunningRef.current) return;
+    if (!activeSession) return;
+    if (queueRef.current.length === 0) return;
+
+    workerRunningRef.current = true;
+
+    while (queueRef.current.length > 0) {
+      if (!activeSession) {
+        break;
+      }
+
+      const job = queueRef.current[0];
+      setCurrentJob(job);
+      setStatusMessages([`Reviewing queued prompt: ${job.promptPreview}`]);
+
+      const thread = codexThreadRef.current;
+      if (!thread) {
+        setStatusMessages((prev) => [...prev, 'No active Codex thread to continue the review.']);
+        break;
+      }
+
+      let completedJob = false;
+      try {
+        const result = await performIncrementalReview(
+          {
+            sessionId: job.sessionId,
+            markdownPath: job.markdownPath,
+            thread,
+            turns: job.turns,
+          },
+          (message) => setStatusMessages((prev) => [...prev, message]),
+        );
+
+        if (activeSession && activeSession.sessionId === job.sessionId) {
+          setReviews((prev) => [
+            ...prev,
+            {
+              critique: result.critique,
+              markdownPath: result.markdownPath,
+              latestPrompt: result.latestPrompt,
+              session: activeSession,
+            },
+          ]);
+        }
+
+        if (job.turns.length) {
+          const latestTurn = job.turns[job.turns.length - 1];
+          lastTurnSignatureRef.current = computeTurnSignature(latestTurn);
+        }
+
+        const version = await getFileVersion(job.markdownPath);
+        if (version) {
+          lastProcessedVersionRef.current = version;
+        }
+
+        setStatusMessages([]);
+        completedJob = true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Queued review failed.';
+        setStatusMessages((prev) => [...prev, `Review failed: ${message}`]);
+        setQueue([...queueRef.current]);
+        break;
+      }
+
+      if (completedJob) {
+        queueRef.current = queueRef.current.slice(1);
+        setQueue(queueRef.current);
+      }
+    }
+
+    workerRunningRef.current = false;
+    setCurrentJob(null);
+  }
+
+  async function startWatcher(session: SpecstorySessionSummary) {
+    await cleanupWatcher();
+
+    const watcher = chokidar.watch(session.markdownPath, {
+      ignoreInitial: true,
+    });
+
+    const handleChange = async () => {
+      const version = await getFileVersion(session.markdownPath);
+      if (!version || version === lastProcessedVersionRef.current) {
+        return;
+      }
+
+      lastProcessedVersionRef.current = version;
+
+      try {
+        const markdown = await fs.readFile(session.markdownPath, 'utf8');
+        const allTurns = extractTurns(markdown);
+        const newTurns = collectNewTurns(allTurns, latestKnownSignature());
+        if (!newTurns.length) {
+          return;
+        }
+
+        const promptPreview = getPromptPreview(newTurns[0].user);
+
+        enqueueJob({
+          sessionId: session.sessionId,
+          markdownPath: session.markdownPath,
+          turns: newTurns,
+          promptPreview,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to read updated markdown.';
+        setStatusMessages((prev) => [...prev, message]);
+      }
+    };
+
+    watcher.on('change', handleChange);
+    watcherRef.current = watcher;
+  }
+
+  async function getFileVersion(filePath: string): Promise<string | null> {
+    try {
+      const stats = await fs.stat(filePath);
+      return stats.mtimeMs.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  function computeTurnSignature(turn: TurnSummary): string {
+    return createHash('sha256')
+      .update(turn.user)
+      .update('\n')
+      .update(turn.agent ?? '')
+      .digest('hex');
+  }
+
+  function collectNewTurns(allTurns: TurnSummary[], lastSignature: string | null): TurnSummary[] {
+    if (!allTurns.length) return [];
+    if (!lastSignature) return allTurns;
+
+    for (let index = allTurns.length - 1; index >= 0; index -= 1) {
+      if (computeTurnSignature(allTurns[index]) === lastSignature) {
+        return allTurns.slice(index + 1);
+      }
+    }
+
+    return allTurns;
+  }
+
+  function latestKnownSignature(): string | null {
+    if (queueRef.current.length) {
+      const lastJob = queueRef.current[queueRef.current.length - 1];
+      const turns = lastJob.turns;
+      if (turns.length) {
+        return computeTurnSignature(turns[turns.length - 1]);
+      }
+    }
+    return lastTurnSignatureRef.current;
+  }
+
+  function formatQueueLabel(job: ReviewQueueItem): string {
+    if (job.turns.length <= 1) return job.promptPreview;
+    const extraCount = job.turns.length - 1;
+    const plural = extraCount === 1 ? '' : 's';
+    return `${job.promptPreview} (+${extraCount} more turn${plural})`;
+  }
+
+  function getPromptPreview(text: string, maxLength = 80): string {
+    const cleaned = text.replace(/\s+/g, ' ').trim();
+    if (cleaned.length <= maxLength) return cleaned;
+    return `${cleaned.slice(0, maxLength - 1)}…`;
+  }
+
   async function reloadSessions() {
     setScreen('loading');
     setError(null);
     setStatusMessages([]);
-    setActiveSession(null);
-    setReview(null);
+    await resetContinuousState();
+    try {
+      await ensureStopHookConfigured();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? `Failed to configure Claude hook: ${err.message}`
+          : 'Failed to configure Claude hook. Try again.';
+      setError(message);
+      setScreen('error');
+      return;
+    }
+
     try {
       await syncSpecstoryHistory();
       const fetched = await listSpecstorySessions();
@@ -95,26 +399,6 @@ export default function App() {
           ? err.message
           : 'Failed to sync SpecStory sessions. Try again.';
       setError(message);
-      setScreen('error');
-    }
-  }
-
-  async function runReview(session: SpecstorySessionSummary) {
-    try {
-      const result = await performInitialReview(
-        { sessionId: session.sessionId, markdownPath: session.markdownPath },
-        (message) => {
-          setStatusMessages((prev) => [...prev, message]);
-        },
-      );
-      setReview({ ...result, session });
-      setScreen('result');
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Review failed. Confirm SpecStory and Codex access.';
-      setError(message);
-      setActiveSession(null);
-      setStatusMessages([]);
       setScreen('error');
     }
   }
@@ -156,7 +440,7 @@ export default function App() {
             ))}
           </Box>
           <Box marginTop={1}>
-            <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh. ● marks this repo.</Text>
+            <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh.</Text>
           </Box>
         </Box>
       )}
@@ -166,34 +450,59 @@ export default function App() {
           <Text>
             Running review for <Text bold>{activeSession.sessionId}</Text>
           </Text>
-          <Box marginTop={1} flexDirection="column">
-            {statusMessages.map((message, index) => (
-              <Text key={`${message}-${index}`} dimColor>
-                {message}
-              </Text>
-            ))}
-          </Box>
-        </Box>
-      )}
 
-      {screen === 'result' && review && (
-        <Box marginTop={1} flexDirection="column">
-          <Text>
-            Review for session <Text bold>{review.session.sessionId}</Text>
-          </Text>
-          {review.latestPrompt && (
-            <Box marginTop={1}>
-              <Text dimColor>Last user prompt: {truncate(review.latestPrompt, 120)}</Text>
-            </Box>
-          )}
-          <Box marginTop={1}>
-            <Text>{review.critique}</Text>
+          <Box marginTop={1} flexDirection="column">
+            {statusMessages.length ? (
+              statusMessages.map((message, index) => (
+                <Text key={`${message}-${index}`} dimColor>
+                  {message}
+                </Text>
+              ))
+            ) : (
+              <Text dimColor>No active status messages.</Text>
+            )}
           </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Markdown export: {review.markdownPath}</Text>
+
+          <Box marginTop={1} flexDirection="column">
+            <Text>Current job:</Text>
+            {currentJob ? (
+              <Text dimColor>{formatQueueLabel(currentJob)}</Text>
+            ) : (
+              <Text dimColor>Idle</Text>
+            )}
           </Box>
+
+          <Box marginTop={1} flexDirection="column">
+            <Text>Queued reviews:</Text>
+            {queue.length ? (
+              queue.map((item, index) => (
+                <Text key={`${item.sessionId}-${index}`} dimColor>
+                  {index + 1}. {formatQueueLabel(item)}
+                </Text>
+              ))
+            ) : (
+              <Text dimColor>(empty)</Text>
+            )}
+          </Box>
+
+          <Box marginTop={1} flexDirection="column">
+            <Text>Completed reviews:</Text>
+            {reviews.length ? (
+              reviews.map((item, index) => (
+                <Box key={`${item.session.sessionId}-${index}`} flexDirection="column" marginTop={1}>
+                  {item.latestPrompt && (
+                    <Text dimColor>Prompt: {truncate(item.latestPrompt, 120)}</Text>
+                  )}
+                  <Text>{item.critique}</Text>
+                </Box>
+              ))
+            ) : (
+              <Text dimColor>No reviews yet.</Text>
+            )}
+          </Box>
+
           <Box marginTop={1}>
-            <Text dimColor>Press B to choose another session.</Text>
+            <Text dimColor>Command: B (back)</Text>
           </Box>
         </Box>
       )}
