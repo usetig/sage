@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 const DEFAULT_BASE_DIR = path.join(process.cwd(), '.sage', 'sessions');
+const HISTORY_BASE_DIR = path.join(process.cwd(), '.sage', 'history');
 
 export interface ExportOptions {
   baseDir?: string;
@@ -117,4 +118,125 @@ async function clearDirectory(dirPath: string): Promise<void> {
       }
     }),
   );
+}
+
+export interface SpecstorySessionSummary {
+  sessionId: string;
+  title: string;
+  timestamp: string | null;
+  markdownPath: string;
+  isWarmup: boolean;
+  initialPrompt?: string;
+}
+
+export async function syncSpecstoryHistory(options: { specstoryBin?: string } = {}): Promise<void> {
+  const specstoryBin = options.specstoryBin ?? 'specstory';
+
+  await fs.mkdir(HISTORY_BASE_DIR, { recursive: true });
+
+  const args = ['sync', 'claude', '--output-dir', HISTORY_BASE_DIR, '--no-version-check', '--silent'];
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(specstoryBin, args, { stdio: 'ignore' });
+    child.on('error', (error) => {
+      reject(new SpecstoryExportError('Failed to start SpecStory sync command', error));
+    });
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new SpecstoryExportError(`SpecStory sync exited with status ${code}`));
+    });
+  });
+}
+
+export async function listSpecstorySessions(): Promise<SpecstorySessionSummary[]> {
+  await fs.mkdir(HISTORY_BASE_DIR, { recursive: true });
+  const entries = await fs.readdir(HISTORY_BASE_DIR, { withFileTypes: true });
+  const sessions: SpecstorySessionSummary[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    const filePath = path.join(HISTORY_BASE_DIR, entry.name);
+    let stats;
+    try {
+      stats = await fs.stat(filePath);
+    } catch (error) {
+      continue;
+    }
+
+    const summary = await parseSpecstoryMarkdown(filePath, stats.mtime);
+    if (summary) {
+      sessions.push(summary);
+    }
+  }
+
+  return sessions.sort((a, b) => {
+    if (a.timestamp && b.timestamp) {
+      const aTime = new Date(a.timestamp).valueOf();
+      const bTime = new Date(b.timestamp).valueOf();
+      if (!Number.isNaN(bTime - aTime)) return bTime - aTime;
+    }
+    return a.sessionId.localeCompare(b.sessionId);
+  });
+}
+
+async function parseSpecstoryMarkdown(
+  filePath: string,
+  modifiedTime: Date,
+): Promise<SpecstorySessionSummary | null> {
+  let content: string;
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    return null;
+  }
+
+  const sessionMatch = content.match(/<!--\s*Claude Code Session\s+([a-f0-9-]+)\s+\(([^)]+)\)\s*-->/i);
+  if (!sessionMatch) return null;
+
+  const sessionId = sessionMatch[1];
+
+  const baseName = path.basename(filePath, '.md');
+
+  const mainUserMatch = content.match(/_\*\*User\*\*_\s*\n+([\s\S]*?)(?=\n-{3,}|_\*\*Agent|\Z)/);
+  const initialPrompt = mainUserMatch ? cleanupPreview(mainUserMatch[1]) : undefined;
+  const isWarmup = !initialPrompt;
+
+  const headingMatch = content.match(/^#\s+(.+)\s*$/m);
+  let heading = headingMatch ? headingMatch[1].trim() : '';
+  if (heading) {
+    heading = heading.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  }
+
+  const slugTitle = deriveTitleFromFilename(baseName);
+  const title = initialPrompt ?? (heading || slugTitle || baseName);
+
+  const timestamp = modifiedTime.toISOString();
+
+  return {
+    sessionId,
+    title,
+    timestamp,
+    markdownPath: filePath,
+    isWarmup,
+    initialPrompt,
+  };
+}
+
+function deriveTitleFromFilename(baseName: string): string {
+  const parts = baseName.split('_');
+  if (parts.length <= 2) return baseName;
+  const slugParts = parts.slice(2).join(' ');
+  const cleaned = slugParts.replace(/-/g, ' ').trim();
+  if (!cleaned) return baseName;
+  return capitalizeWords(cleaned);
+}
+
+function cleanupPreview(text: string): string {
+  const singleLine = text.replace(/\s+/g, ' ').trim();
+  if (singleLine.length <= 120) return singleLine;
+  return `${singleLine.slice(0, 119)}…`;
+}
+
+function capitalizeWords(text: string): string {
+  return text.replace(/\b\w/g, (char) => char.toUpperCase());
 }

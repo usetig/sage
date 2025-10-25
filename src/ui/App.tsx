@@ -1,23 +1,29 @@
 import path from 'path';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Key } from 'ink';
-import { listClaudeSessions, type ClaudeSessionMetadata } from '../lib/claudeSessions.js';
+import {
+  listSpecstorySessions,
+  syncSpecstoryHistory,
+  type SpecstorySessionSummary,
+} from '../lib/specstory.js';
 import { performInitialReview, type ReviewResult } from '../lib/review.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'result';
 
+const repositoryPath = path.resolve(process.cwd());
+
 interface CompletedReview extends ReviewResult {
-  session: ClaudeSessionMetadata;
+  session: SpecstorySessionSummary;
 }
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [error, setError] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<ClaudeSessionMetadata[]>([]);
+  const [sessions, setSessions] = useState<SpecstorySessionSummary[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [statusMessages, setStatusMessages] = useState<string[]>(['Preparing review…']);
-  const [activeSession, setActiveSession] = useState<ClaudeSessionMetadata | null>(null);
+  const [statusMessages, setStatusMessages] = useState<string[]>([]);
+  const [activeSession, setActiveSession] = useState<SpecstorySessionSummary | null>(null);
   const [review, setReview] = useState<CompletedReview | null>(null);
 
   useEffect(() => {
@@ -44,7 +50,7 @@ export default function App() {
       if (key.return) {
         const session = sessions[selectedIndex];
         setActiveSession(session);
-        setStatusMessages(['Exporting SpecStory markdown…']);
+        setStatusMessages([]);
         setScreen('running');
         void runReview(session);
         return;
@@ -65,28 +71,18 @@ export default function App() {
     }
   });
 
-  const highlightedSessions = useMemo(() => {
-    const currentCwd = normalizePath(process.cwd());
-    return sessions.map((session) => ({
-      ...session,
-      isCurrentRepo: normalizePath(session.cwd) === currentCwd,
-    }));
-  }, [sessions]);
-
   async function reloadSessions() {
     setScreen('loading');
     setError(null);
-    setStatusMessages(['Preparing review…']);
+    setStatusMessages([]);
     setActiveSession(null);
     setReview(null);
     try {
-      const fetched = await listClaudeSessions();
-      const currentRepo = normalizePath(process.cwd());
-      const scoped = fetched
-        .filter((session) => normalizePath(session.cwd) === currentRepo)
-        .filter((session) => !session.isWarmup);
-      setSessions(scoped);
-      if (scoped.length) {
+      await syncSpecstoryHistory();
+      const fetched = await listSpecstorySessions();
+      const filtered = fetched.filter((session) => !session.isWarmup);
+      setSessions(filtered);
+      if (filtered.length) {
         setSelectedIndex(0);
         setScreen('session-list');
       } else {
@@ -95,17 +91,22 @@ export default function App() {
       }
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Failed to load Claude sessions. Try again.';
+        err instanceof Error
+          ? err.message
+          : 'Failed to sync SpecStory sessions. Try again.';
       setError(message);
       setScreen('error');
     }
   }
 
-  async function runReview(session: ClaudeSessionMetadata) {
+  async function runReview(session: SpecstorySessionSummary) {
     try {
-      const result = await performInitialReview(session.sessionId, (message) => {
-        setStatusMessages((prev) => [...prev, message]);
-      });
+      const result = await performInitialReview(
+        { sessionId: session.sessionId, markdownPath: session.markdownPath },
+        (message) => {
+          setStatusMessages((prev) => [...prev, message]);
+        },
+      );
       setReview({ ...result, session });
       setScreen('result');
     } catch (err) {
@@ -113,7 +114,7 @@ export default function App() {
         err instanceof Error ? err.message : 'Review failed. Confirm SpecStory and Codex access.';
       setError(message);
       setActiveSession(null);
-      setStatusMessages(['Preparing review…']);
+      setStatusMessages([]);
       setScreen('error');
     }
   }
@@ -128,7 +129,7 @@ export default function App() {
 
       {screen === 'loading' && (
         <Box marginTop={1}>
-          <Text>Loading Claude sessions…</Text>
+          <Text>Syncing SpecStory history…</Text>
         </Box>
       )}
 
@@ -145,7 +146,7 @@ export default function App() {
         <Box marginTop={1} flexDirection="column">
           <Text>Select a Claude session to review:</Text>
           <Box flexDirection="column" marginTop={1}>
-            {highlightedSessions.map((session, index) => (
+            {sessions.map((session, index) => (
               <SessionRow
                 key={`${session.sessionId}-${session.timestamp ?? index}`}
                 session={session}
@@ -201,20 +202,19 @@ export default function App() {
 }
 
 interface SessionRowProps {
-  session: ClaudeSessionMetadata & { isCurrentRepo?: boolean };
+  session: SpecstorySessionSummary;
   index: number;
   isSelected: boolean;
 }
 
 function SessionRow({ session, index, isSelected }: SessionRowProps) {
   const timestamp = session.timestamp ? formatRelativeTime(session.timestamp) : 'Unknown time';
-  const bullet = session.isCurrentRepo ? '●' : '○';
   const prompt = session.title ? truncate(session.title, 60) : '(no prompt recorded)';
 
   return (
     <Box>
       <Text inverse={isSelected}>
-        {bullet} #{index + 1} {prompt} @ {session.cwd} [{timestamp}]
+        ● #{index + 1} {prompt} @ {repositoryPath} [{timestamp}]
       </Text>
     </Box>
   );
@@ -223,10 +223,6 @@ function SessionRow({ session, index, isSelected }: SessionRowProps) {
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength - 1).trimEnd() + '…';
-}
-
-function normalizePath(filePath: string): string {
-  return path.resolve(filePath);
 }
 
 function formatRelativeTime(isoTimestamp: string): string {
