@@ -21,7 +21,7 @@ const singleton = new Codex();
 export async function runInitialReview(
   context: InitialReviewContext,
 ): Promise<{ thread: Thread; critique: string }> {
-  const thread = singleton.startThread({ model: "gpt-4.1-nano" });
+  const thread = singleton.startThread();
   const prompt = buildInitialPrompt(context);
   const result = await thread.run(prompt);
   return {

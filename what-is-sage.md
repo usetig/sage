@@ -30,9 +30,10 @@ Coding agents (Claude Code) can sound confident while being wrong or incomplete.
 - `sage` launches a TUI that lists Claude Code sessions discovered under `~/.claude/projects/**`. Use the arrow keys to pick one for review.
 - On launch, Sage runs `specstory sync claude --output-dir .sage/history --no-version-check --silent` to refresh markdown exports; the picker reads directly from `.sage/history` and reuses those files when reviewing.
 - Sage automatically writes a Claude `Stop` hook to `.claude/settings.local.json` so every Claude response re-runs the SpecStory sync without manual setup.
-- Warmup-only sessions (where Claude injects the initial “Warmup” prompt for prompt caching) are hidden from the picker so Sage reviews the first meaningful user request.
+- **Continuous mode is now active:** After selecting a session, Sage performs an initial review and then watches the markdown file in `.sage/history` for changes. When new turns are detected, they're enqueued and processed via a FIFO queue, ensuring incremental reviews happen automatically as you interact with Claude.
+- Press **B** to go back to the session list from the running review screen.
+- Warmup-only sessions (where Claude injects the initial "Warmup" prompt for prompt caching) are hidden from the picker so Sage reviews the first meaningful user request.
 - Requirements: SpecStory CLI installed on the PATH, valid Codex credentials, and prior Claude activity in the repository.
-- Continuous hooks and incremental reviews remain TODO; the current build handles one-shot critiques per selection.
 
 ---
 
