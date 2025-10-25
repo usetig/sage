@@ -18,6 +18,7 @@ import {
   type ReviewResult,
 } from '../lib/review.js';
 import { ensureStopHookConfigured } from '../lib/hooks.js';
+import { CritiqueCard } from './CritiqueCard.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running';
 
@@ -44,6 +45,7 @@ export default function App() {
   const [reviews, setReviews] = useState<CompletedReview[]>([]);
   const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
   const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
+  const [isInitialReview, setIsInitialReview] = useState(false);
 
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
@@ -114,6 +116,7 @@ export default function App() {
     setActiveSession(session);
     setScreen('running');
     setStatusMessages(['Running initial review…']);
+    setIsInitialReview(true);
 
     try {
       await syncSpecstoryHistory();
@@ -147,12 +150,14 @@ export default function App() {
       }
 
       setStatusMessages([]);
+      setIsInitialReview(false);
 
       await startWatcher(session);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Initial review failed. Please try again.';
       setError(message);
+      setIsInitialReview(false);
       await resetContinuousState();
       setScreen('error');
     }
@@ -172,6 +177,7 @@ export default function App() {
     setReviews([]);
     setStatusMessages([]);
     setActiveSession(null);
+    setIsInitialReview(false);
     lastProcessedVersionRef.current = null;
     codexThreadRef.current = null;
     lastTurnSignatureRef.current = null;
@@ -407,7 +413,7 @@ export default function App() {
     <Box flexDirection="column" padding={1}>
       <Box borderStyle="double" borderColor="cyan" padding={1}>
         <Text bold color="cyan">
-          🧙 Sage — Code Reviewer
+          🧙 Sage — {getProjectName(repositoryPath)}
         </Text>
       </Box>
 
@@ -447,62 +453,45 @@ export default function App() {
 
       {screen === 'running' && activeSession && (
         <Box marginTop={1} flexDirection="column">
-          <Text>
-            Running review for <Text bold>{activeSession.sessionId}</Text>
-          </Text>
-
-          <Box marginTop={1} flexDirection="column">
-            {statusMessages.length ? (
-              statusMessages.map((message, index) => (
+          {statusMessages.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              {statusMessages.map((message, index) => (
                 <Text key={`${message}-${index}`} dimColor>
                   {message}
                 </Text>
-              ))
-            ) : (
-              <Text dimColor>No active status messages.</Text>
-            )}
-          </Box>
+              ))}
+            </Box>
+          )}
 
-          <Box marginTop={1} flexDirection="column">
-            <Text>Current job:</Text>
-            {currentJob ? (
+          {currentJob && (
+            <Box marginTop={1} flexDirection="column">
+              <Text>Current job:</Text>
               <Text dimColor>{formatQueueLabel(currentJob)}</Text>
-            ) : (
-              <Text dimColor>Idle</Text>
-            )}
-          </Box>
+            </Box>
+          )}
 
-          <Box marginTop={1} flexDirection="column">
-            <Text>Queued reviews:</Text>
-            {queue.length ? (
-              queue.map((item, index) => (
+          {queue.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              <Text>Queued reviews:</Text>
+              {queue.map((item, index) => (
                 <Text key={`${item.sessionId}-${index}`} dimColor>
                   {index + 1}. {formatQueueLabel(item)}
                 </Text>
-              ))
-            ) : (
-              <Text dimColor>(empty)</Text>
-            )}
-          </Box>
+              ))}
+            </Box>
+          )}
 
-          <Box marginTop={1} flexDirection="column">
-            <Text>Completed reviews:</Text>
-            {reviews.length ? (
-              reviews.map((item, index) => (
-                <Box key={`${item.session.sessionId}-${index}`} flexDirection="column" marginTop={1}>
-                  {item.latestPrompt && (
-                    <Text dimColor>Prompt: {truncate(item.latestPrompt, 120)}</Text>
-                  )}
-                  <Text>{item.critique}</Text>
-                </Box>
-              ))
-            ) : (
-              <Text dimColor>No reviews yet.</Text>
-            )}
-          </Box>
+          {reviews.map((item, index) => (
+            <CritiqueCard
+              key={`${item.session.sessionId}-${index}`}
+              critique={item.critique}
+              prompt={item.latestPrompt}
+              index={index + 1}
+            />
+          ))}
 
           <Box marginTop={1}>
-            <Text dimColor>Command: B (back)</Text>
+            <Text dimColor>{formatStatus(currentJob, queue.length, isInitialReview)}</Text>
           </Box>
         </Box>
       )}
@@ -552,4 +541,24 @@ function formatRelativeTime(isoTimestamp: string): string {
   if (days < 7) return `${days}d ago`;
 
   return timestamp.toLocaleString();
+}
+
+function getProjectName(cwdPath: string): string {
+  return path.basename(cwdPath);
+}
+
+function formatStatus(currentJob: ReviewQueueItem | null, queueLength: number, isInitialReview: boolean): string {
+  if (isInitialReview) {
+    return 'Status: ⏵ Running initial review...';
+  }
+
+  if (currentJob) {
+    const turnInfo = currentJob.turns.length > 1
+      ? ` (${currentJob.turns.length} turns)`
+      : '';
+    const queueInfo = queueLength > 0 ? ` • ${queueLength} queued` : '';
+    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo}`;
+  }
+
+  return 'Status: ⏺ Idle • Waiting for Claude activity';
 }

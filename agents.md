@@ -16,46 +16,69 @@ This document gives any coding agent the context it needs to contribute safely a
 
 | Area | Status |
 | --- | --- |
-| **Session Discovery** | Reads Claude JSONL logs under `~/.claude/projects/**`. Ignores prompt-caching “Warmup” stubs. |
-| **UI** | Ink TUI (`src/ui/App.tsx`) lists non-warmup sessions from the current repo, handles selection, refresh, and progress logging. |
+| **Session Discovery** | Lists sessions from SpecStory markdown exports in `.sage/history/`. Automatically filters warmup-only stubs. |
+| **UI** | Ink TUI (`src/ui/App.tsx`) with structured critique cards, queue display, and real-time status. Shows project name in header. |
 | **Export** | On launch Sage runs `specstory sync claude --output-dir .sage/history` (with `--no-version-check --silent`) to refresh markdown exports. |
-| **Review Engine** | `src/lib/codex.ts` spins up an OpenAI Codex thread, sends the transcript, and expects a structured critique (verdict, why, alternatives, questions). |
-| **Repo Context** | Codex prompt instructs the model to study the repo (package.json, tsconfig, key sources) before judging the session. |
-| **Progress Reporting** | During review, Sage now prints the markdown path and latest user prompt before asking Codex for a critique. |
+| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions). |
+| **Continuous Mode** | After initial review, file watcher detects new turns via Claude Code `Stop` hooks. Auto-syncs SpecStory and enqueues reviews (FIFO). |
+| **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
 
 ---
 
 ## 3. Architecture Overview
 
 ```
-SpecStory sync (src/lib/specstory.ts)
-                   │   └ writes markdown exports to .sage/history/
-                   ▼
-            Session listing (src/lib/specstory.ts)
-                   │   └ parses markdown headers, skips warmups
-                   ▼
-               Ink TUI (src/ui/App.tsx)
-                   │   └ user picks a session and sees progress logs
-                   ▼
-         Transcript parsing (src/lib/markdown.ts)
-                   │   └ extracts latest turn for debugging + prompt context
-                   ▼
-      Codex review orchestrator (src/lib/review.ts)
-                   │   └ logs markdown path & prompt, calls runOneShotReview
-                   ▼
-         Codex SDK (src/lib/codex.ts)
-                   │   └ builds critique prompt, returns verdict
-                   ▼
-              Ink TUI renders critique card
+┌─ Initial Setup ─────────────────────────────────────────┐
+│ SpecStory sync (src/lib/specstory.ts)                   │
+│    └ writes markdown exports to .sage/history/          │
+│                                                          │
+│ Session listing (src/lib/specstory.ts)                  │
+│    └ parses markdown, filters warmups                   │
+│                                                          │
+│ Session picker (src/ui/App.tsx)                         │
+│    └ user selects session                               │
+│                                                          │
+│ Initial review (src/lib/review.ts)                      │
+│    └ full context review via Codex SDK                  │
+│                                                          │
+│ Hook installation (src/lib/hooks.ts)                    │
+│    └ auto-configures Claude Stop hook                   │
+└──────────────────────────────────────────────────────────┘
+
+┌─ Continuous Mode (after initial review) ────────────────┐
+│ User prompts Claude → Claude finishes                    │
+│    ↓                                                     │
+│ Stop hook fires → specstory sync -s {sessionId}         │
+│    ↓                                                     │
+│ .sage/history/*.md updated                              │
+│    ↓                                                     │
+│ Chokidar file watcher detects change                    │
+│    ↓                                                     │
+│ Extract new turns (src/lib/markdown.ts)                 │
+│    └ scan backwards to last signature                   │
+│    ↓                                                     │
+│ Enqueue review job (FIFO queue in App.tsx)              │
+│    ↓                                                     │
+│ Incremental review (src/lib/review.ts)                  │
+│    └ reuses existing Codex thread                       │
+│    ↓                                                     │
+│ Codex SDK (src/lib/codex.ts)                            │
+│    └ structured JSON output via schema                  │
+│    ↓                                                     │
+│ CritiqueCard component (src/ui/CritiqueCard.tsx)        │
+│    └ renders structured critique with symbols           │
+└──────────────────────────────────────────────────────────┘
 ```
 
 **Key modules and responsibilities:**
 
-- `src/lib/specstory.ts` — Wraps SpecStory sync (`specstory sync claude --output-dir .sage/history`) and parses the generated markdown into session metadata, skipping warmups.
-- `src/ui/App.tsx` — Handles lifecycle: loading sessions, filtering warmups, rendering the picker, running reviews, and showing progress + results.
-- `src/lib/markdown.ts` — Utility to extract the latest user + assistant turn from the exported markdown.
-- `src/lib/review.ts` — Orchestrates the review flow: read SpecStory markdown, log debug info, call Codex, and return the critique.
-- `src/lib/codex.ts` — Thin Codex SDK wrapper that constructs the prompt (with repo-summary instructions) and extracts the final response text.
+- `src/lib/specstory.ts` — Wraps SpecStory sync and session discovery. Exports sessions to `.sage/history/` and parses markdown metadata, filtering warmup-only stubs.
+- `src/lib/hooks.ts` — Auto-configures Claude Code `Stop` hook to trigger `specstory sync` on each turn completion.
+- `src/ui/App.tsx` — Main TUI orchestrator. Manages session picker, file watcher (chokidar), FIFO queue, and continuous review state. Renders status and critique feed.
+- `src/ui/CritiqueCard.tsx` — Structured critique renderer with symbol-coded verdicts and color-coded sections.
+- `src/lib/markdown.ts` — Parses SpecStory markdown to extract all turns and compute turn signatures for incremental processing.
+- `src/lib/review.ts` — Review orchestration layer. Handles initial review (full context) and incremental reviews (new turns only).
+- `src/lib/codex.ts` — Codex SDK wrapper with JSON schema for structured output. Builds initial and follow-up prompts, manages thread lifecycle.
 
 ---
 
@@ -79,17 +102,26 @@ SpecStory sync (src/lib/specstory.ts)
 
 1. Ensure SpecStory and the Codex agent are running locally.
 2. From the repo root, run `npm start` (or `tsx src/index.tsx`).
-3. Sage shows an Ink TUI:
-   - Arrow keys to change selection.
-   - `Enter` to review a session.
-   - `R` to refresh session list (re-run SpecStory sync and rebuild the list).
-   - `B` to go back from the results view.
-4. During review Sage prints:
-   - `Reading SpecStory markdown…`
-   - `Latest user prompt: …`
-   - `Markdown export: …`
-   - `Requesting Codex critique…`
-5. The resulting critique card lists the verdict, rationale, alternatives, and questions.
+3. Sage shows an Ink TUI with session picker:
+   - Arrow keys to navigate sessions.
+   - `Enter` to select a session for review.
+   - `R` to refresh session list (re-run SpecStory sync).
+4. After selection, Sage performs initial review and enters continuous mode:
+   - Status line shows `⏵ Running initial review...` during setup
+   - Automatically installs Claude Code `Stop` hook if not present
+   - Starts watching the session's markdown file for new turns
+5. As you continue with Claude Code, Sage automatically reviews new turns:
+   - New turns are queued (FIFO) and displayed with prompt previews
+   - Status shows `⏵ Reviewing "..."` with queue count
+   - Completed critiques stack vertically (scroll terminal to see history)
+6. Each critique card displays:
+   - Symbol-coded verdict: ✓ Approved | ⚠ Concerns | ✗ Critical Issues
+   - WHY section (color-coded: green/yellow/red)
+   - ALTERNATIVES section (if applicable)
+   - QUESTIONS section (if applicable)
+7. Keyboard controls in continuous mode:
+   - `B` to exit and return to session picker
+   - `Q` to clear pending queue (current review continues)
 
 ---
 
@@ -97,9 +129,10 @@ SpecStory sync (src/lib/specstory.ts)
 
 **Do this:**
 
-- Keep Sage **read-only**. Don’t add write or execute permissions to Codex threads.
+- Keep Sage **read-only**. Don't add write or execute permissions to Codex threads.
 - Maintain prompt clarity: any new Codex prompts must emphasize repo inspection, correctness, and admitting uncertainty.
-- Respect the warmup filter—don’t reintroduce warmup-only sessions into the picker unless you add an explicit toggle.
+- Use **structured output schemas** for Codex responses. All fields must be in the `required` array (OpenAI constraint). Instruct Codex to return empty strings for optional sections.
+- Respect the warmup filter—don't reintroduce warmup-only sessions into the picker unless you add an explicit toggle.
 - When touching session parsing, account for resume forks and unusual content; tolerant parsers prevent crashing on new Claude schema changes.
 - Update docs (`what-is-sage.md`, `agents.md`, troubleshooting notes) whenever behavior or CLI flags change.
 
@@ -114,8 +147,8 @@ SpecStory sync (src/lib/specstory.ts)
 
 ## 8. Known Limitations & TODOs
 
-- **Resume chains:** Sage doesn’t yet hop from a resumed session ID back to the parent export. Warmup-only exports during resumes still require manual selection of the original session.
-- **Continuous reviews:** Only one-shot manual reviews are supported. Hooks for streaming/automatic critiques are planned.
+- **Resume chains:** Sage doesn't yet hop from a resumed session ID back to the parent export. Warmup-only exports during resumes still require manual selection of the original session.
+- **Critique history navigation:** Reviews stack vertically for scrollback but no arrow-key navigation within the UI. Users scroll their terminal to see previous reviews.
 - **Read-only enforcement:** Codex threads currently rely on context instructions; explicit permission settings (if supported by the SDK) would enhance safety.
 - **Comprehensive logging:** Minimal debug output goes to the console; consider writing a log file for diagnosing SpecStory or Codex failures.
 
@@ -127,9 +160,11 @@ SpecStory sync (src/lib/specstory.ts)
 | --- | --- |
 | Start Sage TUI | `npm start` or `tsx src/index.tsx` |
 | TypeScript build check | `npm run build` |
-| Session filtering logic | `src/lib/claudeSessions.ts` |
-| SpecStory wrapper | `src/lib/specstory.ts` |
-| Codex prompt builder | `src/lib/codex.ts` |
+| Session discovery & listing | `src/lib/specstory.ts` |
+| Hook auto-installation | `src/lib/hooks.ts` |
+| Codex prompt builder & schemas | `src/lib/codex.ts` |
+| Review orchestration | `src/lib/review.ts` |
+| Critique card component | `src/ui/CritiqueCard.tsx` |
 | Manual SpecStory export | `specstory sync claude --output-dir .sage/history` |
 
 ---

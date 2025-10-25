@@ -1,10 +1,10 @@
 import { promises as fs } from 'fs';
 import type { Thread } from '@openai/codex-sdk';
 import { extractLatestTurn, extractTurns, type TurnSummary } from './markdown.js';
-import { runFollowupReview, runInitialReview } from './codex.js';
+import { runFollowupReview, runInitialReview, type CritiqueResponse } from './codex.js';
 
 export interface ReviewResult {
-  critique: string;
+  critique: CritiqueResponse;
   markdownPath: string;
   latestPrompt?: string;
 }

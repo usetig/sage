@@ -2,6 +2,28 @@ import { Codex } from '@openai/codex-sdk';
 import type { Thread } from '@openai/codex-sdk';
 import type { TurnSummary } from './markdown.js';
 
+export interface CritiqueResponse {
+  verdict: 'Approved' | 'Concerns' | 'Critical Issues';
+  why: string;
+  alternatives: string;
+  questions: string;
+}
+
+const CRITIQUE_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: {
+      type: 'string',
+      enum: ['Approved', 'Concerns', 'Critical Issues'],
+    },
+    why: { type: 'string' },
+    alternatives: { type: 'string' },
+    questions: { type: 'string' },
+  },
+  required: ['verdict', 'why', 'alternatives', 'questions'],
+  additionalProperties: false,
+} as const;
+
 export interface InitialReviewContext {
   sessionId: string;
   markdown: string;
@@ -20,20 +42,35 @@ const singleton = new Codex();
 
 export async function runInitialReview(
   context: InitialReviewContext,
-): Promise<{ thread: Thread; critique: string }> {
+): Promise<{ thread: Thread; critique: CritiqueResponse }> {
   const thread = singleton.startThread();
   const prompt = buildInitialPrompt(context);
-  const result = await thread.run(prompt);
+  const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
+
+  // When outputSchema is used, finalResponse contains the structured object
+  const critique = typeof result.finalResponse === 'object'
+    ? result.finalResponse as CritiqueResponse
+    : JSON.parse(result.finalResponse as string) as CritiqueResponse;
+
   return {
     thread,
-    critique: extractText(result).trim(),
+    critique,
   };
 }
 
-export async function runFollowupReview(thread: Thread, context: FollowupReviewContext): Promise<string> {
+export async function runFollowupReview(
+  thread: Thread,
+  context: FollowupReviewContext,
+): Promise<CritiqueResponse> {
   const prompt = buildFollowupPrompt(context);
-  const result = await thread.run(prompt);
-  return extractText(result).trim();
+  const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
+
+  // When outputSchema is used, finalResponse contains the structured object
+  const critique = typeof result.finalResponse === 'object'
+    ? result.finalResponse as CritiqueResponse
+    : JSON.parse(result.finalResponse as string) as CritiqueResponse;
+
+  return critique;
 }
 
 function buildInitialPrompt({ sessionId, markdown, latestTurnSummary }: InitialReviewContext): string {
@@ -43,7 +80,8 @@ function buildInitialPrompt({ sessionId, markdown, latestTurnSummary }: InitialR
 
   return [
     'You are Sage, a meticulous AI code reviewer that evaluates Claude Code sessions.',
-    'Your goal is to deliver a critique card with these sections: Verdict, Why, Alternatives (optional), Questions (optional).',
+    'Your goal is to deliver a critique card with these sections: Verdict, Why, Alternatives, Questions.',
+    'If Alternatives or Questions are not applicable, return empty strings for those fields.',
     'Focus on correctness issues, missing steps, risky assumptions, and suggest practical next actions for the developer.',
     // 'Before critiquing, gather context on the repository yourself: list the root directory, inspect key config files (package.json, README.md, tsconfig.json, etc.), and skim any implementation files referenced in the conversation.',
     // 'Summarize what you learn about the project structure in your critique so the developer sees you grounded the review in their codebase.',
@@ -77,7 +115,8 @@ function buildFollowupPrompt({ sessionId, newTurns }: FollowupReviewContext): st
   return [
     'You are Sage, continuing an in-depth review of a Claude Code session.',
     'Focus on the newly provided turn(s) and decide whether they introduce new risks, resolve prior concerns, or require follow-up guidance.',
-    'Return a critique card with sections: Verdict, Why, Alternatives (optional), Questions (optional).',
+    'Return a critique card with sections: Verdict, Why, Alternatives, Questions.',
+    'If Alternatives or Questions are not applicable, return empty strings for those fields.',
     'Do not repeat repository reconnaissance performed earlier—reference prior context only when needed, and read additional files only if these turn(s) require it.',
     'Highlight concrete issues, cite files or functions when relevant, and admit uncertainty if information is missing.',
     '',
