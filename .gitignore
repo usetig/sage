@@ -3,3 +3,4 @@ dist/
 .sage/
 .specstory/
 .DS_Store
+.env

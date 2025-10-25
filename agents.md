@@ -18,7 +18,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | --- | --- |
 | **Session Discovery** | Reads Claude JSONL logs under `~/.claude/projects/**`. Ignores prompt-caching “Warmup” stubs. |
 | **UI** | Ink TUI (`src/ui/App.tsx`) lists non-warmup sessions from the current repo, handles selection, refresh, and progress logging. |
-| **Export** | Uses the SpecStory CLI (`specstory sync claude -s <id> ...`) to materialize a markdown transcript per session into `.sage/sessions/<sessionId>/`. |
+| **Export** | On launch Sage runs `specstory sync claude --output-dir .sage/history` (with `--no-version-check --silent`) to refresh markdown exports. |
 | **Review Engine** | `src/lib/codex.ts` spins up an OpenAI Codex thread, sends the transcript, and expects a structured critique (verdict, why, alternatives, questions). |
 | **Repo Context** | Codex prompt instructs the model to study the repo (package.json, tsconfig, key sources) before judging the session. |
 | **Progress Reporting** | During review, Sage now prints the markdown path and latest user prompt before asking Codex for a critique. |
@@ -28,14 +28,14 @@ This document gives any coding agent the context it needs to contribute safely a
 ## 3. Architecture Overview
 
 ```
-Claude JSONL ──► Session discovery (src/lib/claudeSessions.ts)
-                   │   └ filters warmups, builds metadata list
+SpecStory sync (src/lib/specstory.ts)
+                   │   └ writes markdown exports to .sage/history/
+                   ▼
+            Session listing (src/lib/specstory.ts)
+                   │   └ parses markdown headers, skips warmups
                    ▼
                Ink TUI (src/ui/App.tsx)
-                   │   └ user picks a session
-                   ▼
-         SpecStory export (src/lib/specstory.ts)
-                   │   └ syncs markdown to .sage/sessions/<id>/
+                   │   └ user picks a session and sees progress logs
                    ▼
          Transcript parsing (src/lib/markdown.ts)
                    │   └ extracts latest turn for debugging + prompt context
@@ -51,18 +51,17 @@ Claude JSONL ──► Session discovery (src/lib/claudeSessions.ts)
 
 **Key modules and responsibilities:**
 
-- `src/lib/claudeSessions.ts` — Scans JSONL files, finds the first non-warmup main user prompt, flags `isWarmup`, surfaces `initialPrompt`, timestamp, and file paths.
+- `src/lib/specstory.ts` — Wraps SpecStory sync (`specstory sync claude --output-dir .sage/history`) and parses the generated markdown into session metadata, skipping warmups.
 - `src/ui/App.tsx` — Handles lifecycle: loading sessions, filtering warmups, rendering the picker, running reviews, and showing progress + results.
-- `src/lib/specstory.ts` — Wrapper around the SpecStory CLI. Uses the new `-s` flag (0.12+) and enforces `--no-version-check --silent`. Writes exports to `.sage/sessions/<sessionId>/`.
 - `src/lib/markdown.ts` — Utility to extract the latest user + assistant turn from the exported markdown.
-- `src/lib/review.ts` — Orchestrates the review flow: run SpecStory, read markdown, log debug info, call Codex, and return the critique.
+- `src/lib/review.ts` — Orchestrates the review flow: read SpecStory markdown, log debug info, call Codex, and return the critique.
 - `src/lib/codex.ts` — Thin Codex SDK wrapper that constructs the prompt (with repo-summary instructions) and extracts the final response text.
 
 ---
 
 ## 4. External Dependencies & Environment Assumptions
 
-1. **SpecStory CLI** (`specstory`) must be on PATH. Sage calls `specstory sync claude -s <sessionId> --output-dir … --no-version-check --silent`. Make sure users install ≥0.12.0 (older versions used `-u`).
+1. **SpecStory CLI** (`specstory`) must be on PATH. Sage calls `specstory sync claude --output-dir .sage/history --no-version-check --silent`. Make sure users install ≥0.12.0 (older versions used `-u`).
 2. **OpenAI Codex SDK** (`@openai/codex-sdk`) handles review generation. It talks to the local Codex agent; no API key is set in this repo.
 3. **Ink / React** render the TUI. Components rely on Node 18+.
 4. **Claude log format** is assumed to stay JSONL with `type`, `sessionId`, `message.{role,content}`, `summary`, and optional prompt caching warmups.
@@ -83,11 +82,10 @@ Claude JSONL ──► Session discovery (src/lib/claudeSessions.ts)
 3. Sage shows an Ink TUI:
    - Arrow keys to change selection.
    - `Enter` to review a session.
-   - `R` to refresh session list (re-scan logs, reapply warmup filter).
+   - `R` to refresh session list (re-run SpecStory sync and rebuild the list).
    - `B` to go back from the results view.
 4. During review Sage prints:
-   - `Exporting SpecStory markdown…`
-   - `Reading exported conversation…`
+   - `Reading SpecStory markdown…`
    - `Latest user prompt: …`
    - `Markdown export: …`
    - `Requesting Codex critique…`
@@ -107,7 +105,7 @@ Claude JSONL ──► Session discovery (src/lib/claudeSessions.ts)
 
 **Avoid this:**
 
-- Don’t rely on undocumented SpecStory flags. Stick to `specstory sync claude -s`.
+- Don’t rely on undocumented SpecStory flags. Stick to `specstory sync claude --output-dir …`.
 - Don’t mutate `process.cwd()` or assume Codex will operate in a specific directory unless you pass the right context (future enhancement).
 - Avoid duplicating exports. If you need additional metadata from Claude logs, extend the parser rather than shelling out multiple times.
 - Don’t silently swallow errors from SpecStory or Codex; surface meaningful messages in the UI.
@@ -132,7 +130,7 @@ Claude JSONL ──► Session discovery (src/lib/claudeSessions.ts)
 | Session filtering logic | `src/lib/claudeSessions.ts` |
 | SpecStory wrapper | `src/lib/specstory.ts` |
 | Codex prompt builder | `src/lib/codex.ts` |
-| Manual SpecStory export | `specstory sync claude -s <sessionId> --output-dir .sage/sessions/<sessionId>` |
+| Manual SpecStory export | `specstory sync claude --output-dir .sage/history` |
 
 ---
 

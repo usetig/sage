@@ -4,18 +4,24 @@ export interface TurnSummary {
 }
 
 export function extractLatestTurn(markdown: string): TurnSummary | null {
+  const turns = extractTurns(markdown);
+  if (!turns.length) return null;
+  return turns[turns.length - 1];
+}
+
+export function extractTurns(markdown: string): TurnSummary[] {
   const lines = markdown.split(/\r?\n/);
   let mode: 'idle' | 'user' | 'agent' = 'idle';
   let userContent: string[] = [];
   let agentContent: string[] = [];
-  let lastTurn: TurnSummary | null = null;
+  const turns: TurnSummary[] = [];
 
   for (const raw of lines) {
     const line = raw.trim();
 
     if (line.startsWith('_**User')) {
       if (userContent.length) {
-        lastTurn = buildTurn(userContent, agentContent);
+        turns.push(buildTurn(userContent, agentContent));
         userContent = [];
         agentContent = [];
       } else if (agentContent.length) {
@@ -32,7 +38,7 @@ export function extractLatestTurn(markdown: string): TurnSummary | null {
 
     if (line.startsWith('---')) {
       if (userContent.length) {
-        lastTurn = buildTurn(userContent, agentContent);
+        turns.push(buildTurn(userContent, agentContent));
         userContent = [];
         agentContent = [];
       }
@@ -45,10 +51,10 @@ export function extractLatestTurn(markdown: string): TurnSummary | null {
   }
 
   if (userContent.length) {
-    lastTurn = buildTurn(userContent, agentContent);
+    turns.push(buildTurn(userContent, agentContent));
   }
 
-  return lastTurn;
+  return turns;
 }
 
 function buildTurn(userLines: string[], agentLines: string[]): TurnSummary {

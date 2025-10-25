@@ -1,8 +1,7 @@
 import { promises as fs } from 'fs';
-import path from 'path';
-import { exportSessionMarkdown } from './specstory.js';
-import { extractLatestTurn } from './markdown.js';
-import { runOneShotReview } from './codex.js';
+import type { Thread } from '@openai/codex-sdk';
+import { extractLatestTurn, extractTurns, type TurnSummary } from './markdown.js';
+import { runFollowupReview, runInitialReview } from './codex.js';
 
 export interface ReviewResult {
   critique: string;
@@ -10,16 +9,21 @@ export interface ReviewResult {
   latestPrompt?: string;
 }
 
-export async function performInitialReview(
-  sessionId: string,
-  onProgress?: (message: string) => void,
-): Promise<ReviewResult> {
-  onProgress?.('Exporting SpecStory markdown…');
-  const markdownPath = await exportSessionMarkdown(sessionId);
+export type InitialReviewResult = ReviewResult & {
+  thread: Thread;
+  turns: TurnSummary[];
+};
 
-  onProgress?.('Reading exported conversation…');
+export async function performInitialReview(
+  session: { sessionId: string; markdownPath: string },
+  onProgress?: (message: string) => void,
+): Promise<InitialReviewResult> {
+  const { sessionId, markdownPath } = session;
+
+  onProgress?.('Reading SpecStory markdown…');
   const markdown = await fs.readFile(markdownPath, 'utf8');
-  const latestTurn = extractLatestTurn(markdown);
+  const turns = extractTurns(markdown);
+  const latestTurn = turns.length ? turns[turns.length - 1] : null;
   const latestPromptPreview = latestTurn?.user
     ? previewText(latestTurn.user)
     : '(none captured)';
@@ -28,7 +32,7 @@ export async function performInitialReview(
   onProgress?.(`Markdown export: ${markdownPath}`);
 
   onProgress?.('Requesting Codex critique…');
-  const critique = await runOneShotReview({
+  const { thread, critique } = await runInitialReview({
     sessionId,
     markdown,
     latestTurnSummary: latestTurn ?? undefined,
@@ -40,11 +44,38 @@ export async function performInitialReview(
     critique,
     markdownPath,
     latestPrompt: latestTurn?.user,
+    thread,
+    turns,
   };
 }
 
-export function getSessionOutputDir(sessionId: string): string {
-  return path.join(process.cwd(), '.sage', 'sessions', sessionId);
+export interface IncrementalReviewRequest {
+  sessionId: string;
+  markdownPath: string;
+  thread: Thread;
+  turns: TurnSummary[];
+}
+
+export async function performIncrementalReview(
+  request: IncrementalReviewRequest,
+  onProgress?: (message: string) => void,
+): Promise<ReviewResult> {
+  const { sessionId, markdownPath, thread, turns } = request;
+  if (!turns.length) {
+    throw new Error('No new turns provided for incremental review.');
+  }
+
+  const firstPromptPreview = previewText(turns[0].user);
+  onProgress?.(`Reviewing new turn(s) starting with: ${firstPromptPreview}`);
+  onProgress?.('Requesting Codex critique…');
+  const critique = await runFollowupReview(thread, { sessionId, newTurns: turns });
+  onProgress?.('Review complete.');
+
+  return {
+    critique,
+    markdownPath,
+    latestPrompt: turns[turns.length - 1]?.user,
+  };
 }
 
 function previewText(text: string, maxLength = 160): string {
