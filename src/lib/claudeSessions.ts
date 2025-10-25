@@ -11,6 +11,7 @@ export interface ClaudeSessionMetadata {
   timestamp: string | null;
   projectDir: string;
   logPath: string;
+  isWarmup: boolean;
 }
 
 const CLAUDE_PROJECTS_DIR = process.env.CLAUDE_PROJECTS_DIR ?? path.join(os.homedir(), '.claude', 'projects');
@@ -111,7 +112,10 @@ async function readSessionMetadata(
   const accumulator: {
     sessionId?: string;
     cwd?: string;
-    title?: string;
+    firstUserPrompt?: string;
+    firstMainPrompt?: string;
+    firstNonWarmupPrompt?: string;
+    summaryTitle?: string;
     timestamp?: string;
   } = {};
 
@@ -134,17 +138,42 @@ async function readSessionMetadata(
         accumulator.cwd = parsed.cwd;
       }
 
-      if (!accumulator.timestamp && typeof parsed.timestamp === 'string') {
-        accumulator.timestamp = parsed.timestamp;
-      } else if (!accumulator.timestamp && typeof parsed.createdAt === 'string') {
-        accumulator.timestamp = parsed.createdAt;
+      if (!accumulator.timestamp) {
+        const ts = extractTimestamp(parsed);
+        if (ts) accumulator.timestamp = ts;
       }
 
-      if (!accumulator.title && isMainUserPrompt(parsed) && parsed.message?.content) {
+      if (parsed?.type === 'summary') {
+        const summaryText =
+          typeof parsed.summary === 'string'
+            ? parsed.summary
+            : typeof parsed.title === 'string'
+              ? parsed.title
+              : undefined;
+        if (summaryText) {
+          accumulator.summaryTitle = summaryText;
+        }
+      }
+
+      if (!accumulator.firstUserPrompt && parsed?.type === 'user' && parsed.message?.content) {
         const normalized = normalizeMessage(parsed.message.content);
         if (normalized) {
-          accumulator.title = normalized;
-          break;
+          accumulator.firstUserPrompt = normalized;
+        }
+      }
+
+      if (isMainUserPrompt(parsed) && parsed.message?.content) {
+        const normalized = normalizeMessage(parsed.message.content);
+        if (normalized) {
+          if (!accumulator.firstMainPrompt) {
+            accumulator.firstMainPrompt = normalized;
+          }
+          if (!accumulator.firstNonWarmupPrompt && !isWarmupText(normalized)) {
+            accumulator.firstNonWarmupPrompt = normalized;
+          }
+          if (accumulator.firstMainPrompt && accumulator.firstNonWarmupPrompt) {
+            break;
+          }
         }
       }
     }
@@ -155,8 +184,23 @@ async function readSessionMetadata(
 
   const sessionId = accumulator.sessionId ?? fileName.replace(/\.jsonl$/, '');
   const cwd = accumulator.cwd ?? defaultCwd;
-  const title = accumulator.title ?? 'Untitled session';
+  const titleCandidate =
+    accumulator.firstNonWarmupPrompt ??
+    accumulator.summaryTitle ??
+    accumulator.firstMainPrompt ??
+    '';
+  const title = titleCandidate || 'Untitled session';
   const timestamp = accumulator.timestamp ?? null;
+  const initialPrompt =
+    accumulator.firstNonWarmupPrompt ??
+    accumulator.firstMainPrompt ??
+    accumulator.summaryTitle ??
+    '';
+  const warmupCandidate = accumulator.firstNonWarmupPrompt
+    ? ''
+    : accumulator.firstMainPrompt ?? accumulator.firstUserPrompt ?? '';
+  const isWarmup =
+    Boolean(warmupCandidate) && !accumulator.firstNonWarmupPrompt && isWarmupText(warmupCandidate);
 
   if (!sessionId) return null;
 
@@ -164,7 +208,13 @@ async function readSessionMetadata(
     sessionId,
     cwd,
     title,
-    initialPrompt: title,
+    initialPrompt,
     timestamp,
+    isWarmup,
   };
+}
+
+function isWarmupText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return normalized === 'warmup' || normalized === 'warm up';
 }

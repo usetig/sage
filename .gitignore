@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .sage/
+.specstory/
+.DS_Store

@@ -44,7 +44,7 @@ async function runSpecstory(specstoryBin: string, sessionId: string, outputDir: 
   const args = [
     'sync',
     'claude',
-    '-u',
+    '-s',
     sessionId,
     '--output-dir',
     outputDir,

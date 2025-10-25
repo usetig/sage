@@ -16,7 +16,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ClaudeSessionMetadata[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [statusMessage, setStatusMessage] = useState<string>('Preparing review…');
+  const [statusMessages, setStatusMessages] = useState<string[]>(['Preparing review…']);
   const [activeSession, setActiveSession] = useState<ClaudeSessionMetadata | null>(null);
   const [review, setReview] = useState<CompletedReview | null>(null);
 
@@ -44,7 +44,7 @@ export default function App() {
       if (key.return) {
         const session = sessions[selectedIndex];
         setActiveSession(session);
-        setStatusMessage('Exporting SpecStory markdown…');
+        setStatusMessages(['Exporting SpecStory markdown…']);
         setScreen('running');
         void runReview(session);
         return;
@@ -76,19 +76,21 @@ export default function App() {
   async function reloadSessions() {
     setScreen('loading');
     setError(null);
-    setStatusMessage('Preparing review…');
+    setStatusMessages(['Preparing review…']);
     setActiveSession(null);
     setReview(null);
     try {
       const fetched = await listClaudeSessions();
       const currentRepo = normalizePath(process.cwd());
-      const scoped = fetched.filter((session) => normalizePath(session.cwd) === currentRepo);
+      const scoped = fetched
+        .filter((session) => normalizePath(session.cwd) === currentRepo)
+        .filter((session) => !session.isWarmup);
       setSessions(scoped);
       if (scoped.length) {
         setSelectedIndex(0);
         setScreen('session-list');
       } else {
-        setError('No Claude Code sessions found for this repository.');
+        setError('No non-warmup Claude Code sessions found for this repository.');
         setScreen('error');
       }
     } catch (err) {
@@ -101,7 +103,9 @@ export default function App() {
 
   async function runReview(session: ClaudeSessionMetadata) {
     try {
-      const result = await performInitialReview(session.sessionId, setStatusMessage);
+      const result = await performInitialReview(session.sessionId, (message) => {
+        setStatusMessages((prev) => [...prev, message]);
+      });
       setReview({ ...result, session });
       setScreen('result');
     } catch (err) {
@@ -109,7 +113,7 @@ export default function App() {
         err instanceof Error ? err.message : 'Review failed. Confirm SpecStory and Codex access.';
       setError(message);
       setActiveSession(null);
-      setStatusMessage('Preparing review…');
+      setStatusMessages(['Preparing review…']);
       setScreen('error');
     }
   }
@@ -161,8 +165,12 @@ export default function App() {
           <Text>
             Running review for <Text bold>{activeSession.sessionId}</Text>
           </Text>
-          <Box marginTop={1}>
-            <Text dimColor>{statusMessage}</Text>
+          <Box marginTop={1} flexDirection="column">
+            {statusMessages.map((message, index) => (
+              <Text key={`${message}-${index}`} dimColor>
+                {message}
+              </Text>
+            ))}
           </Box>
         </Box>
       )}
