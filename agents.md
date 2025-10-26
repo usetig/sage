@@ -121,8 +121,8 @@ This document gives any coding agent the context it needs to contribute safely a
    - ALTERNATIVES section (if applicable)
    - QUESTIONS section (if applicable)
 7. Keyboard controls in continuous mode:
+   - `M` to manually trigger SpecStory sync (useful when hook doesn't fire or for testing)
    - `B` to exit and return to session picker
-   - `Q` to clear pending queue (current review continues)
 
 ---
 
