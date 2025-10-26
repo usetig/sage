@@ -27,7 +27,12 @@ export function extractTurns(markdown: string): TurnSummary[] {
       }
 
       if (userContent.length) {
-        turns.push(buildTurn(userContent, agentContent));
+        const turn = buildTurn(userContent, agentContent);
+        if (!isInterruptTurn(turn)) {
+          turns.push(turn);
+        } else {
+          console.log('[Sage] Filtered interrupt turn:', turn.user.slice(0, 80));
+        }
         userContent = [];
         agentContent = [];
       } else if (agentContent.length) {
@@ -58,7 +63,12 @@ export function extractTurns(markdown: string): TurnSummary[] {
   }
 
   if (userContent.length) {
-    turns.push(buildTurn(userContent, agentContent));
+    const turn = buildTurn(userContent, agentContent);
+    if (!isInterruptTurn(turn)) {
+      turns.push(turn);
+    } else {
+      console.log('[Sage] Filtered interrupt turn (final):', turn.user.slice(0, 80));
+    }
   }
 
   return turns;
@@ -66,6 +76,17 @@ export function extractTurns(markdown: string): TurnSummary[] {
 
 function isSidechainHeader(lowerCasedHeader: string): boolean {
   return lowerCasedHeader.includes('(sidechain)');
+}
+
+function isInterruptTurn(turn: TurnSummary): boolean {
+  const userLower = turn.user.toLowerCase().trim();
+  // Detect user interrupt patterns from Claude Code
+  return (
+    userLower.includes('[request interrupted by user') ||
+    userLower.startsWith('request interrupted by user') ||
+    // Also filter if there's an interrupt AND no agent response
+    (userLower.includes('interrupt') && !turn.agent)
+  );
 }
 
 function buildTurn(userLines: string[], agentLines: string[]): TurnSummary {
