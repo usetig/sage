@@ -25,13 +25,21 @@ function sanitizeFilename(value: string): string {
   return 'prompt';
 }
 
+export interface DebugArtifactPayload {
+  fullPrompt: string;
+  instructions: string;
+  context: string;
+  promptLabel?: string;
+}
+
 export async function writeDebugReviewArtifact(
-  promptText: string,
-  contextText: string,
-  userPrompt: string,
+  payload: DebugArtifactPayload,
 ): Promise<string> {
   const baseDir = await ensureDebugDir();
-  const slug = sanitizeFilename(userPrompt || promptText);
+  const nameSource = payload.promptLabel
+    || payload.instructions.split('\n')[0]
+    || payload.fullPrompt.slice(0, 60);
+  const slug = sanitizeFilename(nameSource);
   const baseName = `review-${slug || 'prompt'}`;
   let attempt = 0;
   let filePath: string;
@@ -50,14 +58,17 @@ export async function writeDebugReviewArtifact(
       break;
     }
   }
-  const payload = [
-    'Prompt Instructions:',
-    promptText,
+  const fileContents = [
+    'Full prompt payload (as sent to Codex):',
+    payload.fullPrompt,
     '',
-    'Context:',
-    contextText,
+    'Prompt instructions segment:',
+    payload.instructions,
+    '',
+    'Context segment:',
+    payload.context,
   ].join('\n');
-  await fs.writeFile(filePath, payload, 'utf8');
+  await fs.writeFile(filePath, fileContents, 'utf8');
   return filePath;
 }
 

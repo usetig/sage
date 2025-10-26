@@ -49,6 +49,7 @@ export default function App() {
   const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
   const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
   const [isInitialReview, setIsInitialReview] = useState(false);
+  const [manualSyncTriggered, setManualSyncTriggered] = useState(false);
 
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
@@ -56,6 +57,7 @@ export default function App() {
   const lastProcessedVersionRef = useRef<string | null>(null);
   const codexThreadRef = useRef<Thread | null>(null);
   const lastTurnSignatureRef = useRef<string | null>(null);
+  const manualSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     void reloadSessions();
@@ -191,14 +193,25 @@ export default function App() {
   async function handleManualSync() {
     if (!activeSession) return;
 
-    setStatusMessages((prev) => [...prev, 'Manual sync triggered...']);
+    // Show temporary feedback
+    setManualSyncTriggered(true);
+
+    // Clear any existing timeout
+    if (manualSyncTimeoutRef.current) {
+      clearTimeout(manualSyncTimeoutRef.current);
+    }
 
     try {
       await syncSpecstoryHistory();
-      setStatusMessages((prev) => [...prev, 'Manual sync completed. Watching for changes...']);
+      // File watcher will detect changes and enqueue reviews automatically
+      // Keep the feedback visible for 2 seconds
+      manualSyncTimeoutRef.current = setTimeout(() => {
+        setManualSyncTriggered(false);
+      }, 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Manual sync failed.';
       setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
+      setManualSyncTriggered(false);
     }
   }
 
@@ -538,7 +551,7 @@ export default function App() {
           ))}
 
           <Box marginTop={1}>
-            <Text dimColor>{formatStatus(currentJob, queue.length, isInitialReview)}</Text>
+            <Text dimColor>{formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered)}</Text>
           </Box>
         </Box>
       )}
@@ -594,7 +607,14 @@ function getProjectName(cwdPath: string): string {
   return path.basename(cwdPath);
 }
 
-function formatStatus(currentJob: ReviewQueueItem | null, queueLength: number, isInitialReview: boolean): string {
+function formatStatus(
+  currentJob: ReviewQueueItem | null,
+  queueLength: number,
+  isInitialReview: boolean,
+  manualSyncTriggered: boolean,
+): string {
+  const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
+
   if (isInitialReview) {
     return 'Status: ⏵ Running initial review...';
   }
@@ -604,8 +624,8 @@ function formatStatus(currentJob: ReviewQueueItem | null, queueLength: number, i
       ? ` (${currentJob.turns.length} turns)`
       : '';
     const queueInfo = queueLength > 0 ? ` • ${queueLength} queued` : '';
-    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • M to manually sync`;
+    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel}`;
   }
 
-  return 'Status: ⏺ Idle • Waiting for Claude activity • M to manually sync';
+  return `Status: ⏺ Idle • Waiting for Claude activity • ${manualSyncLabel}`;
 }

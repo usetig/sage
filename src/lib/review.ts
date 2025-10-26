@@ -51,11 +51,12 @@ export async function performInitialReview(
 
   if (debug) {
     onProgress?.('[Debug] Skipping Codex critique.');
-    const artifactPath = await writeDebugReviewArtifact(
-      promptPayload.promptText,
-      promptPayload.contextText,
-      latestTurn?.user ?? sessionId,
-    );
+    const artifactPath = await writeDebugReviewArtifact({
+      fullPrompt: promptPayload.prompt,
+      instructions: promptPayload.promptText,
+      context: promptPayload.contextText,
+      promptLabel: latestTurn?.user ?? sessionId,
+    });
     const debugWhy = [
       'Debug mode active — Codex call skipped.',
       `Session ID: ${sessionId}`,
@@ -125,11 +126,12 @@ export async function performIncrementalReview(
 
   if (debug) {
     onProgress?.('[Debug] Skipping Codex critique.');
-    const artifactPath = await writeDebugReviewArtifact(
-      promptPayload.promptText,
-      promptPayload.contextText,
-      turns[0]?.user ?? sessionId,
-    );
+    const artifactPath = await writeDebugReviewArtifact({
+      fullPrompt: promptPayload.prompt,
+      instructions: promptPayload.promptText,
+      context: promptPayload.contextText,
+      promptLabel: turns[0]?.user ?? sessionId,
+    });
     return {
       critique: {
         verdict: 'Approved',

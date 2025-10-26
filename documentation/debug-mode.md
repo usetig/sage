@@ -29,7 +29,7 @@ Unset the variable (or set it to `0`/`false`) to resume normal Codex-backed revi
 2. **Prompt/context artifacts are written**
    - Every mock review writes a file under `.debug/` named `review-<prompt>.txt`.
    - Filenames are derived from the user prompt (sanitized and deduplicated). If multiple reviews share a prompt, numeric suffixes are appended.
-   - File contents include the top-level instructions followed by the exact context sent to Codex (e.g., the full SpecStory transcript for initial reviews or the incremental turn snippets).
+   - File contents begin with the exact prompt string Sage would send to Codex (including wrapper markers such as `<conversation>` or `<new_turns>`), followed by the separated instruction and context segments for quick scanning.
 
 3. **UI feedback changes**
    - Status messages read `Debug mode active — Codex agent bypassed` and list the session ID, the SpecStory markdown path, and the artifact location.
@@ -43,10 +43,16 @@ Unset the variable (or set it to `0`/`false`) to resume normal Codex-backed revi
 The `.debug/` directory is created at the repository root the first time a debug review runs. Each artifact looks like this:
 
 ```
-Prompt Instructions:
+Full prompt payload (as sent to Codex):
+You are Sage, a meticulous AI code reviewer…
+<conversation>
+<!-- Claude Code Session ... -->
+...
+
+Prompt instructions segment:
 You are Sage, a meticulous AI code reviewer…
 
-Context:
+Context segment:
 <!-- Claude Code Session ... -->
 ...
 ```

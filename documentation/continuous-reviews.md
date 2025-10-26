@@ -82,7 +82,7 @@ This document describes how Sage keeps up with an active Claude Code session onc
 - **Running Screen**
   - Displays current status messages, the job being processed, queued reviews (with a `(+N more turns)` suffix when batching occurs), and the list of completed critiques.
   - **Commands:**
-    - `M` to manually trigger SpecStory sync. Runs `syncSpecstoryHistory()` which executes the same command as the Stop hook. The file watcher detects the updated markdown and automatically enqueues any new turns for review. Useful when the Stop hook doesn't fire, for forcing a refresh check, or during testing/debugging.
+    - `M` to manually trigger SpecStory sync. Runs `syncSpecstoryHistory()` which executes the same command as the Stop hook. The status shows `M to manually sync (triggered)` for 2 seconds while the sync completes, then reverts to normal. The file watcher detects the updated markdown and automatically enqueues any new turns for review. Useful when the Stop hook doesn't fire, for forcing a refresh check, or during testing/debugging.
     - `B` to exit continuous mode and return to session picker.
 - **Queue Behavior**
   - Items are enqueued as soon as the watcher parses new turns.
