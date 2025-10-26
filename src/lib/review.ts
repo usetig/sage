@@ -1,16 +1,27 @@
 import { promises as fs } from 'fs';
 import type { Thread } from '@openai/codex-sdk';
-import { extractLatestTurn, extractTurns, type TurnSummary } from './markdown.js';
-import { runFollowupReview, runInitialReview, type CritiqueResponse } from './codex.js';
+import { extractTurns, type TurnSummary } from './markdown.js';
+import {
+  runFollowupReview,
+  runInitialReview,
+  buildInitialPromptPayload,
+  buildFollowupPromptPayload,
+  type CritiqueResponse,
+} from './codex.js';
+import { isDebugMode, writeDebugReviewArtifact } from './debug.js';
 
 export interface ReviewResult {
   critique: CritiqueResponse;
   markdownPath: string;
   latestPrompt?: string;
+  debugInfo?: {
+    artifactPath: string;
+    promptText: string;
+  };
 }
 
 export type InitialReviewResult = ReviewResult & {
-  thread: Thread;
+  thread: Thread | null;
   turns: TurnSummary[];
 };
 
@@ -19,6 +30,7 @@ export async function performInitialReview(
   onProgress?: (message: string) => void,
 ): Promise<InitialReviewResult> {
   const { sessionId, markdownPath } = session;
+  const debug = isDebugMode();
 
   onProgress?.('Reading SpecStory markdown…');
   const markdown = await fs.readFile(markdownPath, 'utf8');
@@ -30,6 +42,47 @@ export async function performInitialReview(
 
   onProgress?.(`Latest user prompt: ${latestPromptPreview}`);
   onProgress?.(`Markdown export: ${markdownPath}`);
+
+  const promptPayload = buildInitialPromptPayload({
+    sessionId,
+    markdown,
+    latestTurnSummary: latestTurn ?? undefined,
+  });
+
+  if (debug) {
+    onProgress?.('[Debug] Skipping Codex critique.');
+    const artifactPath = await writeDebugReviewArtifact(
+      promptPayload.promptText,
+      promptPayload.contextText,
+      latestTurn?.user ?? sessionId,
+    );
+    const debugWhy = [
+      'Debug mode active — Codex call skipped.',
+      `Session ID: ${sessionId}`,
+      `SpecStory markdown: ${markdownPath}`,
+      `Context file: ${artifactPath}`,
+      '',
+      'Prompt text:',
+      promptPayload.promptText,
+    ].join('\n');
+
+    return {
+      critique: {
+        verdict: 'Approved',
+        why: debugWhy,
+        alternatives: '',
+        questions: '',
+      },
+      markdownPath,
+      latestPrompt: latestTurn?.user,
+      thread: null,
+      turns,
+      debugInfo: {
+        artifactPath,
+        promptText: promptPayload.promptText,
+      },
+    };
+  }
 
   onProgress?.('Requesting Codex critique…');
   const { thread, critique } = await runInitialReview({
@@ -52,7 +105,7 @@ export async function performInitialReview(
 export interface IncrementalReviewRequest {
   sessionId: string;
   markdownPath: string;
-  thread: Thread;
+  thread: Thread | null;
   turns: TurnSummary[];
 }
 
@@ -64,11 +117,49 @@ export async function performIncrementalReview(
   if (!turns.length) {
     throw new Error('No new turns provided for incremental review.');
   }
+  const debug = isDebugMode();
 
   const firstPromptPreview = previewText(turns[0].user);
   onProgress?.(`Reviewing new turn(s) starting with: ${firstPromptPreview}`);
+  const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
+
+  if (debug) {
+    onProgress?.('[Debug] Skipping Codex critique.');
+    const artifactPath = await writeDebugReviewArtifact(
+      promptPayload.promptText,
+      promptPayload.contextText,
+      turns[0]?.user ?? sessionId,
+    );
+    return {
+      critique: {
+        verdict: 'Approved',
+        why: [
+          'Debug mode active — Codex call skipped.',
+          `Session ID: ${sessionId}`,
+          `SpecStory markdown: ${markdownPath}`,
+          `Context file: ${artifactPath}`,
+          '',
+          'Prompt text:',
+          promptPayload.promptText,
+        ].join('\n'),
+        alternatives: '',
+        questions: '',
+      },
+      markdownPath,
+      latestPrompt: turns[turns.length - 1]?.user,
+      debugInfo: {
+        artifactPath,
+        promptText: promptPayload.promptText,
+      },
+    };
+  }
+
+  if (!thread) {
+    throw new Error('No active Codex thread to continue the review.');
+  }
+
   onProgress?.('Requesting Codex critique…');
-  const critique = await runFollowupReview(thread, { sessionId, newTurns: turns });
+  const { critique } = await runFollowupReview(thread, { sessionId, newTurns: turns });
   onProgress?.('Review complete.');
 
   return {

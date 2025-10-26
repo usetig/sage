@@ -40,12 +40,18 @@ export interface FollowupReviewContext {
 
 const singleton = new Codex();
 
+export interface PromptPayload {
+  prompt: string;
+  promptText: string;
+  contextText: string;
+}
+
 export async function runInitialReview(
   context: InitialReviewContext,
-): Promise<{ thread: Thread; critique: CritiqueResponse }> {
+): Promise<{ thread: Thread; critique: CritiqueResponse; promptPayload: PromptPayload }> {
   const thread = singleton.startThread();
-  const prompt = buildInitialPrompt(context);
-  const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
+  const payload = buildInitialPromptPayload(context);
+  const result = await thread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
 
   // When outputSchema is used, finalResponse contains the structured object
   const critique = typeof result.finalResponse === 'object'
@@ -55,49 +61,60 @@ export async function runInitialReview(
   return {
     thread,
     critique,
+    promptPayload: payload,
   };
 }
 
 export async function runFollowupReview(
   thread: Thread,
   context: FollowupReviewContext,
-): Promise<CritiqueResponse> {
-  const prompt = buildFollowupPrompt(context);
-  const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
+): Promise<{ critique: CritiqueResponse; promptPayload: PromptPayload }> {
+  const payload = buildFollowupPromptPayload(context);
+  const result = await thread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
 
   // When outputSchema is used, finalResponse contains the structured object
   const critique = typeof result.finalResponse === 'object'
     ? result.finalResponse as CritiqueResponse
     : JSON.parse(result.finalResponse as string) as CritiqueResponse;
 
-  return critique;
+  return {
+    critique,
+    promptPayload: payload,
+  };
 }
 
-function buildInitialPrompt({ sessionId, markdown, latestTurnSummary }: InitialReviewContext): string {
+export function buildInitialPromptPayload(
+  { sessionId, markdown, latestTurnSummary }: InitialReviewContext,
+): PromptPayload {
   const latestTurnSection = latestTurnSummary
     ? `Latest Claude turn:\nUser prompt:\n${latestTurnSummary.user}\n\nClaude response:\n${latestTurnSummary.agent ?? '(Claude has not responded yet)'}\n`
     : 'Latest Claude turn could not be determined from the export.\n';
 
-  return [
+  const promptText = [
     'You are Sage, a meticulous AI code reviewer that evaluates Claude Code sessions.',
     'Your goal is to deliver a critique card with these sections: Verdict, Why, Alternatives, Questions.',
     'If Alternatives or Questions are not applicable, return empty strings for those fields.',
     'Focus on correctness issues, missing steps, risky assumptions, and suggest practical next actions for the developer.',
-    // 'Before critiquing, gather context on the repository yourself: list the root directory, inspect key config files (package.json, README.md, tsconfig.json, etc.), and skim any implementation files referenced in the conversation.',
-    // 'Summarize what you learn about the project structure in your critique so the developer sees you grounded the review in their codebase.',
     'Be concise but specific. Point to files/functions when relevant. Admit uncertainty when needed.',
     'Be super quick too. We want to be able to review new turns as they come in.',
     '',
     `Session ID: ${sessionId}`,
     latestTurnSection,
     'Full conversation transcript follows between <conversation> tags. Use it to ground your critique.',
-    '<conversation>',
-    markdown.trim(),
-    '</conversation>',
   ].join('\n');
+
+  const contextText = markdown.trim();
+
+  return {
+    prompt: [promptText, '<conversation>', contextText, '</conversation>'].join('\n'),
+    promptText,
+    contextText,
+  };
 }
 
-function buildFollowupPrompt({ sessionId, newTurns }: FollowupReviewContext): string {
+export function buildFollowupPromptPayload(
+  { sessionId, newTurns }: FollowupReviewContext,
+): PromptPayload {
   const formattedTurns = newTurns
     .map((turn, index) => {
       const pieces = [
@@ -112,7 +129,7 @@ function buildFollowupPrompt({ sessionId, newTurns }: FollowupReviewContext): st
     })
     .join('\n\n');
 
-  return [
+  const promptText = [
     'You are Sage, continuing an in-depth review of a Claude Code session.',
     'Focus on the newly provided turn(s) and decide whether they introduce new risks, resolve prior concerns, or require follow-up guidance.',
     'Return a critique card with sections: Verdict, Why, Alternatives, Questions.',
@@ -122,37 +139,13 @@ function buildFollowupPrompt({ sessionId, newTurns }: FollowupReviewContext): st
     '',
     `Session ID: ${sessionId}`,
     'New Claude turn(s) follow between <new_turns> tags.',
-    '<new_turns>',
-    formattedTurns,
-    '</new_turns>',
   ].join('\n');
-}
 
-function extractText(result: unknown): string {
-  if (typeof result === 'string') return result;
+  const contextText = formattedTurns;
 
-  if (result && typeof result === 'object') {
-    if ('finalResponse' in result && typeof (result as { finalResponse?: unknown }).finalResponse === 'string') {
-      return (result as { finalResponse: string }).finalResponse;
-    }
-
-    const candidate = (result as { text?: unknown }).text;
-    if (typeof candidate === 'string') return candidate;
-
-    if (Array.isArray((result as { items?: unknown }).items)) {
-      const items = (result as { items: Array<{ text?: string }> }).items;
-      for (let i = items.length - 1; i >= 0; i -= 1) {
-        const text = items[i]?.text;
-        if (typeof text === 'string' && text.trim()) return text;
-      }
-    }
-
-    if (Array.isArray((result as { messages?: unknown }).messages)) {
-      const messages = (result as { messages: Array<{ role: string; content: string }> }).messages;
-      const last = messages[messages.length - 1];
-      if (last && typeof last.content === 'string') return last.content;
-    }
-  }
-
-  return String(result ?? '');
+  return {
+    prompt: [promptText, '<new_turns>', formattedTurns, '</new_turns>'].join('\n'),
+    promptText,
+    contextText,
+  };
 }

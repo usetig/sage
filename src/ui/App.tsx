@@ -19,6 +19,7 @@ import {
 } from '../lib/review.js';
 import { ensureStopHookConfigured } from '../lib/hooks.js';
 import { CritiqueCard } from './CritiqueCard.js';
+import { isDebugMode } from '../lib/debug.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running';
 
@@ -34,6 +35,8 @@ interface ReviewQueueItem {
   turns: TurnSummary[];
   promptPreview: string;
 }
+
+const debugMode = isDebugMode();
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -140,6 +143,7 @@ export default function App() {
           critique: result.critique,
           markdownPath: result.markdownPath,
           latestPrompt: result.latestPrompt,
+          debugInfo: result.debugInfo,
           session,
         },
       ]);
@@ -149,7 +153,19 @@ export default function App() {
         lastProcessedVersionRef.current = versionAfter;
       }
 
-      setStatusMessages([]);
+      if (debugMode) {
+        const baseMessages = [
+          'Debug mode active — Codex agent bypassed.',
+          `Session ID: ${session.sessionId}`,
+          `SpecStory markdown: ${session.markdownPath}`,
+        ];
+        const artifactMessage = result.debugInfo?.artifactPath
+          ? [`Debug context artifact: ${result.debugInfo.artifactPath}`]
+          : [];
+        setStatusMessages([...baseMessages, ...artifactMessage]);
+      } else {
+        setStatusMessages([]);
+      }
       setIsInitialReview(false);
 
       await startWatcher(session);
@@ -217,7 +233,7 @@ export default function App() {
       setStatusMessages([`Reviewing queued prompt: ${job.promptPreview}`]);
 
       const thread = codexThreadRef.current;
-      if (!thread) {
+      if (!thread && !debugMode) {
         setStatusMessages((prev) => [...prev, 'No active Codex thread to continue the review.']);
         break;
       }
@@ -241,6 +257,7 @@ export default function App() {
               critique: result.critique,
               markdownPath: result.markdownPath,
               latestPrompt: result.latestPrompt,
+              debugInfo: result.debugInfo,
               session: activeSession,
             },
           ]);
@@ -256,7 +273,19 @@ export default function App() {
           lastProcessedVersionRef.current = version;
         }
 
-        setStatusMessages([]);
+        if (debugMode) {
+          const debugMessages = [
+            'Debug mode active — Codex agent bypassed.',
+            `Session ID: ${job.sessionId}`,
+            `SpecStory markdown: ${job.markdownPath}`,
+          ];
+          const artifact = result.debugInfo?.artifactPath
+            ? `Debug context artifact: ${result.debugInfo.artifactPath}`
+            : null;
+          setStatusMessages(artifact ? [...debugMessages, artifact] : debugMessages);
+        } else {
+          setStatusMessages([]);
+        }
         completedJob = true;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
