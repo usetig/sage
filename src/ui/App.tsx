@@ -91,6 +91,10 @@ export default function App() {
         void handleExitContinuousMode();
         return;
       }
+      if (lower === 'm') {
+        void handleManualSync();
+        return;
+      }
     }
 
     if (screen === 'error' && input.toLowerCase() === 'r') {
@@ -182,6 +186,20 @@ export default function App() {
   async function handleExitContinuousMode() {
     await resetContinuousState();
     setScreen('session-list');
+  }
+
+  async function handleManualSync() {
+    if (!activeSession) return;
+
+    setStatusMessages((prev) => [...prev, 'Manual sync triggered...']);
+
+    try {
+      await syncSpecstoryHistory();
+      setStatusMessages((prev) => [...prev, 'Manual sync completed. Watching for changes...']);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Manual sync failed.';
+      setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
+    }
   }
 
   async function resetContinuousState() {
@@ -586,8 +604,8 @@ function formatStatus(currentJob: ReviewQueueItem | null, queueLength: number, i
       ? ` (${currentJob.turns.length} turns)`
       : '';
     const queueInfo = queueLength > 0 ? ` • ${queueLength} queued` : '';
-    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo}`;
+    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • M to manually sync`;
   }
 
-  return 'Status: ⏺ Idle • Waiting for Claude activity';
+  return 'Status: ⏺ Idle • Waiting for Claude activity • M to manually sync';
 }
