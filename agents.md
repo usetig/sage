@@ -22,6 +22,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions). |
 | **Continuous Mode** | After initial review, file watcher detects new turns via Claude Code `Stop` hooks. Auto-syncs SpecStory and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
+| **Debug Mode** | Set `SAGE_DEBUG=1` to bypass Codex calls, emit mock critiques, and archive prompts/context under `.debug/`. |
 
 ---
 
@@ -166,6 +167,17 @@ This document gives any coding agent the context it needs to contribute safely a
 | Review orchestration | `src/lib/review.ts` |
 | Critique card component | `src/ui/CritiqueCard.tsx` |
 | Manual SpecStory export | `specstory sync claude --output-dir .sage/history` |
+
+---
+
+## 10. Debug Mode
+
+- **Purpose:** Quickly validate end-to-end plumbing without waiting on the Codex agent. Useful when the SDK is unavailable, when working offline, or when you just need to inspect the exact prompt/context Sage would send.
+- **Activation:** Export `SAGE_DEBUG` with any truthy value (`1`, `true`, `yes`, `on`) before launching Sage. Leave it unset to run normally.
+- **Behavior:** Initial and incremental reviews skip Codex entirely, returning mock critiques stamped “Debug mode active”. Each critique surfaces the session ID, SpecStory markdown file, and the filesystem path to a captured prompt/context artifact.
+- **Artifacts:** Sage writes prompt instructions plus the raw conversation/context to `.debug/review-<prompt>.txt`. Filenames are sanitized and deduplicated. The directory is ignored by git.
+- **UI Indicators:** The status pane shows `Debug mode active — Codex agent bypassed`. Critique cards echo the same message and include the prompt text so you can confirm the exact instructions without opening the artifact.
+- **Cleanup:** Remove the `.debug/` folder or individual files when you no longer need them. They are ignored by version control but can accumulate quickly during rapid iteration.
 
 ---
 
