@@ -26,7 +26,7 @@ const CRITIQUE_SCHEMA = {
 
 export interface InitialReviewContext {
   sessionId: string;
-  markdown: string;
+  turns: TurnSummary[];
   latestTurnSummary?: {
     user: string;
     agent?: string;
@@ -84,7 +84,7 @@ export async function runFollowupReview(
 }
 
 export function buildInitialPromptPayload(
-  { sessionId, markdown, latestTurnSummary }: InitialReviewContext,
+  { sessionId, turns, latestTurnSummary }: InitialReviewContext,
 ): PromptPayload {
   const latestTurnSection = latestTurnSummary
     ? `Latest Claude turn:\nUser prompt:\n${latestTurnSummary.user}\n\nClaude response:\n${latestTurnSummary.agent ?? '(Claude has not responded yet)'}\n`
@@ -128,7 +128,8 @@ export function buildInitialPromptPayload(
     'Full conversation transcript follows between <conversation> tags. Use it to ground your critique.',
   ].join('\n');
 
-  const contextText = markdown.trim();
+  const conversationText = turns.length ? formatTurnsForPrompt(turns) : 'No conversation turns were parsed from the export.';
+  const contextText = conversationText.trim();
 
   return {
     prompt: [promptText, '<conversation>', contextText, '</conversation>'].join('\n'),
@@ -140,19 +141,7 @@ export function buildInitialPromptPayload(
 export function buildFollowupPromptPayload(
   { sessionId, newTurns }: FollowupReviewContext,
 ): PromptPayload {
-  const formattedTurns = newTurns
-    .map((turn, index) => {
-      const pieces = [
-        `Turn ${index + 1}`,
-        'User prompt:',
-        turn.user,
-        '',
-        'Claude response:',
-        turn.agent ?? '(Claude has not responded yet)',
-      ];
-      return pieces.join('\n');
-    })
-    .join('\n\n');
+  const formattedTurns = formatTurnsForPrompt(newTurns);
 
   const promptText = [
     '# Audience Reminder',
@@ -199,6 +188,22 @@ export function buildFollowupPromptPayload(
   return {
     prompt: [promptText, '<new_turns>', formattedTurns, '</new_turns>'].join('\n'),
     promptText,
-    contextText,
+    contextText: formattedTurns,
   };
+}
+
+function formatTurnsForPrompt(turns: TurnSummary[]): string {
+  return turns
+    .map((turn, index) => {
+      const pieces = [
+        `Turn ${index + 1}`,
+        'User prompt:',
+        turn.user,
+        '',
+        'Claude response:',
+        turn.agent ?? '(Claude has not responded yet)',
+      ];
+      return pieces.join('\n');
+    })
+    .join('\n\n');
 }

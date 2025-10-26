@@ -45,7 +45,7 @@ export async function performInitialReview(
 
   const promptPayload = buildInitialPromptPayload({
     sessionId,
-    markdown,
+    turns,
     latestTurnSummary: latestTurn ?? undefined,
   });
 
@@ -90,7 +90,7 @@ export async function performInitialReview(
   onProgress?.('Requesting Codex critique…');
   const { thread, critique } = await runInitialReview({
     sessionId,
-    markdown,
+    turns,
     latestTurnSummary: latestTurn ?? undefined,
   });
 
