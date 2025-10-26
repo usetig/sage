@@ -58,7 +58,7 @@ This document describes how Sage keeps up with an active Claude Code session onc
 
 ## Turn Tracking & Signatures
 
-- Each `TurnSummary` contains raw markdown text for the user and agent segments.
+- Each `TurnSummary` contains raw markdown text for the user and agent segments taken only from primary Claude ↔ developer turns. Sidechain blocks (`(sidechain)` headers from Claude sub-agents) are filtered during parsing so they never enqueue reviews on their own.
 - `collectNewTurns()` hashes each turn (`user + '\n' + agent`) with SHA-256.
 - When we enqueue jobs, we also check the current queue tail so that multiple watcher events arriving before the worker drains the queue still process in sequence.
 - If the stored signature is missing (e.g., on first run or after a reset), the watcher treats the entire markdown as new to avoid silently skipping content.

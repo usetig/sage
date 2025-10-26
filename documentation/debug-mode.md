@@ -30,7 +30,7 @@ Unset the variable (or set it to `0`/`false`) to resume normal Codex-backed revi
    - **Note:** As of recent updates, artifacts are created for **every review** regardless of whether debug mode is enabled. This allows you to always inspect what was sent to Codex.
    - Every review writes a file under `.debug/` named `review-<prompt>.txt`.
    - Filenames are derived from the user prompt (sanitized and deduplicated). If multiple reviews share a prompt, numeric suffixes are appended.
-   - File contents begin with the exact prompt string Sage sends to Codex (including wrapper markers such as `<conversation>` or `<new_turns>`), followed by the separated instruction and context segments for quick scanning.
+   - File contents begin with the exact prompt string Sage sends to Codex (including wrapper markers such as `<conversation>` or `<new_turns>`), followed by the separated instruction and context segments for quick scanning. Sub-agent `(sidechain)` turns are filtered out before writing so only the primary conversation appears.
    - The artifact path is displayed in the UI under "Review #x • ..." for all reviews.
 
 3. **UI feedback changes**

@@ -11,15 +11,21 @@ export function extractLatestTurn(markdown: string): TurnSummary | null {
 
 export function extractTurns(markdown: string): TurnSummary[] {
   const lines = markdown.split(/\r?\n/);
-  let mode: 'idle' | 'user' | 'agent' = 'idle';
+  let mode: 'idle' | 'user' | 'agent' | 'skip' = 'idle';
   let userContent: string[] = [];
   let agentContent: string[] = [];
   const turns: TurnSummary[] = [];
 
   for (const raw of lines) {
     const line = raw.trim();
+    const lowerLine = line.toLowerCase();
 
-    if (line.startsWith('_**User')) {
+    if (lowerLine.startsWith('_**user')) {
+      if (isSidechainHeader(lowerLine)) {
+        mode = 'skip';
+        continue;
+      }
+
       if (userContent.length) {
         turns.push(buildTurn(userContent, agentContent));
         userContent = [];
@@ -27,11 +33,17 @@ export function extractTurns(markdown: string): TurnSummary[] {
       } else if (agentContent.length) {
         agentContent = [];
       }
+
       mode = 'user';
       continue;
     }
 
-    if (line.startsWith('_**Agent')) {
+    if (lowerLine.startsWith('_**agent')) {
+      if (isSidechainHeader(lowerLine)) {
+        mode = 'skip';
+        continue;
+      }
+
       mode = 'agent';
       continue;
     }
@@ -50,6 +62,10 @@ export function extractTurns(markdown: string): TurnSummary[] {
   }
 
   return turns;
+}
+
+function isSidechainHeader(lowerCasedHeader: string): boolean {
+  return lowerCasedHeader.includes('(sidechain)');
 }
 
 function buildTurn(userLines: string[], agentLines: string[]): TurnSummary {

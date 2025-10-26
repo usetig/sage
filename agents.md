@@ -19,7 +19,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | **Session Discovery** | Lists sessions from SpecStory markdown exports in `.sage/history/`. Automatically filters warmup-only stubs. |
 | **UI** | Ink TUI (`src/ui/App.tsx`) with structured critique cards, queue display, and real-time status. Shows project name in header. |
 | **Export** | On launch Sage runs `specstory sync claude --output-dir .sage/history` (with `--no-version-check --silent`) to refresh markdown exports. |
-| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions). |
+| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/markdown.ts` now strips `(sidechain)` turns so only primary Claude ↔ developer dialogue is reviewed. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions). |
 | **Continuous Mode** | After initial review, file watcher detects new turns via Claude Code `Stop` hooks. Auto-syncs SpecStory and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
 | **Debug Mode** | Prompts/context are always archived under `.debug/`. Set `SAGE_DEBUG=1` to bypass Codex calls and emit mock critiques. |
@@ -134,6 +134,7 @@ This document gives any coding agent the context it needs to contribute safely a
 - Maintain prompt clarity: any new Codex prompts must emphasize repo inspection, correctness, and admitting uncertainty.
 - Use **structured output schemas** for Codex responses. All fields must be in the `required` array (OpenAI constraint). Instruct Codex to return empty strings for optional sections.
 - Respect the warmup filter—don't reintroduce warmup-only sessions into the picker unless you add an explicit toggle.
+- Preserve sidechain filtering in `extractTurns()`—only primary Claude/developer turns should enqueue reviews or reach Codex.
 - When touching session parsing, account for resume forks and unusual content; tolerant parsers prevent crashing on new Claude schema changes.
 - Update docs (`what-is-sage.md`, `agents.md`, troubleshooting notes) whenever behavior or CLI flags change.
 
