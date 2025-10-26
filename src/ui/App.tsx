@@ -547,6 +547,7 @@ export default function App() {
               critique={item.critique}
               prompt={item.latestPrompt}
               index={index + 1}
+              artifactPath={item.debugInfo?.artifactPath}
             />
           ))}
 

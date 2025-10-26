@@ -49,14 +49,16 @@ export async function performInitialReview(
     latestTurnSummary: latestTurn ?? undefined,
   });
 
+  // Always create debug artifact regardless of debug mode
+  const artifactPath = await writeDebugReviewArtifact({
+    fullPrompt: promptPayload.prompt,
+    instructions: promptPayload.promptText,
+    context: promptPayload.contextText,
+    promptLabel: latestTurn?.user ?? sessionId,
+  });
+
   if (debug) {
     onProgress?.('[Debug] Skipping Codex critique.');
-    const artifactPath = await writeDebugReviewArtifact({
-      fullPrompt: promptPayload.prompt,
-      instructions: promptPayload.promptText,
-      context: promptPayload.contextText,
-      promptLabel: latestTurn?.user ?? sessionId,
-    });
     const debugWhy = [
       'Debug mode active — Codex call skipped.',
       `Session ID: ${sessionId}`,
@@ -100,6 +102,10 @@ export async function performInitialReview(
     latestPrompt: latestTurn?.user,
     thread,
     turns,
+    debugInfo: {
+      artifactPath,
+      promptText: promptPayload.promptText,
+    },
   };
 }
 
@@ -124,14 +130,16 @@ export async function performIncrementalReview(
   onProgress?.(`Reviewing new turn(s) starting with: ${firstPromptPreview}`);
   const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
 
+  // Always create debug artifact regardless of debug mode
+  const artifactPath = await writeDebugReviewArtifact({
+    fullPrompt: promptPayload.prompt,
+    instructions: promptPayload.promptText,
+    context: promptPayload.contextText,
+    promptLabel: turns[0]?.user ?? sessionId,
+  });
+
   if (debug) {
     onProgress?.('[Debug] Skipping Codex critique.');
-    const artifactPath = await writeDebugReviewArtifact({
-      fullPrompt: promptPayload.prompt,
-      instructions: promptPayload.promptText,
-      context: promptPayload.contextText,
-      promptLabel: turns[0]?.user ?? sessionId,
-    });
     return {
       critique: {
         verdict: 'Approved',
@@ -168,6 +176,10 @@ export async function performIncrementalReview(
     critique,
     markdownPath,
     latestPrompt: turns[turns.length - 1]?.user,
+    debugInfo: {
+      artifactPath,
+      promptText: promptPayload.promptText,
+    },
   };
 }
 

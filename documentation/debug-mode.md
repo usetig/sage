@@ -26,10 +26,12 @@ Unset the variable (or set it to `0`/`false`) to resume normal Codex-backed revi
    - `performInitialReview` and `performIncrementalReview` short-circuit before invoking the Codex SDK.
    - Reviews return an "Approved" verdict with a WHY section that clearly states debug mode is active.
 
-2. **Prompt/context artifacts are written**
-   - Every mock review writes a file under `.debug/` named `review-<prompt>.txt`.
+2. **Prompt/context artifacts (Always Created)**
+   - **Note:** As of recent updates, artifacts are created for **every review** regardless of whether debug mode is enabled. This allows you to always inspect what was sent to Codex.
+   - Every review writes a file under `.debug/` named `review-<prompt>.txt`.
    - Filenames are derived from the user prompt (sanitized and deduplicated). If multiple reviews share a prompt, numeric suffixes are appended.
-   - File contents begin with the exact prompt string Sage would send to Codex (including wrapper markers such as `<conversation>` or `<new_turns>`), followed by the separated instruction and context segments for quick scanning.
+   - File contents begin with the exact prompt string Sage sends to Codex (including wrapper markers such as `<conversation>` or `<new_turns>`), followed by the separated instruction and context segments for quick scanning.
+   - The artifact path is displayed in the UI under "Review #x • ..." for all reviews.
 
 3. **UI feedback changes**
    - Status messages read `Debug mode active — Codex agent bypassed` and list the session ID, the SpecStory markdown path, and the artifact location.
@@ -57,12 +59,13 @@ Context segment:
 ...
 ```
 
-Open the file to see the precise payload Sage would have sent to Codex. These artifacts are ignored by git (`.debug/` is listed in `.gitignore`). Remove the directory when it’s no longer needed.
+Open the file to see the precise payload Sage sent (or would have sent) to Codex. These artifacts are ignored by git (`.debug/` is listed in `.gitignore`). Remove the directory when it's no longer needed.
 
 ## Notes and caveats
 
+- **Artifacts are always created:** As of recent updates, debug artifacts are written for every review, not just in debug mode. This lets you inspect Codex prompts even during normal operation.
 - Debug mode does **not** simulate Codex reasoning; it only confirms the scaffolding around prompt generation and queue handling.
 - Continuous mode still watches SpecStory exports and enqueues reviews. You can confirm watcher behavior without hitting external services.
-- Because critiques always return "Approved", downstream tooling should treat debug runs as non-authoritative.
+- Because critiques in debug mode always return "Approved", downstream tooling should treat debug runs as non-authoritative.
 
-Use debug mode to iterate faster when Codex isn’t available, then disable it to validate Sage’s real review pipeline.
+Use debug mode to iterate faster when Codex isn't available, then disable it to validate Sage's real review pipeline. Use the artifact files in either mode to inspect the exact prompts and context being sent to Codex.

@@ -6,6 +6,7 @@ interface CritiqueCardProps {
   critique: CritiqueResponse;
   prompt?: string;
   index: number;
+  artifactPath?: string;
 }
 
 const VERDICT_SYMBOLS = {
@@ -20,7 +21,7 @@ const VERDICT_COLORS = {
   'Critical Issues': 'red',
 } as const;
 
-export function CritiqueCard({ critique, prompt, index }: CritiqueCardProps) {
+export function CritiqueCard({ critique, prompt, index, artifactPath }: CritiqueCardProps) {
   const symbol = VERDICT_SYMBOLS[critique.verdict] || '•';
   const color = VERDICT_COLORS[critique.verdict] || 'white';
 
@@ -31,6 +32,12 @@ export function CritiqueCard({ critique, prompt, index }: CritiqueCardProps) {
       {prompt && (
         <Text dimColor>
           Review #{index} • "{truncatePrompt(prompt)}"
+        </Text>
+      )}
+
+      {artifactPath && (
+        <Text dimColor>
+          Debug artifact: {artifactPath}
         </Text>
       )}
 
