@@ -37,11 +37,6 @@ export function extractTurns(markdown: string): TurnSummary[] {
     }
 
     if (line.startsWith('---')) {
-      if (userContent.length) {
-        turns.push(buildTurn(userContent, agentContent));
-        userContent = [];
-        agentContent = [];
-      }
       mode = 'idle';
       continue;
     }
