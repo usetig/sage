@@ -19,7 +19,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | **Session Discovery** | Lists sessions from SpecStory markdown exports in `.sage/history/`. Automatically filters warmup-only stubs. |
 | **UI** | Ink TUI (`src/ui/App.tsx`) with structured critique cards, queue display, and real-time status. Shows project name in header. |
 | **Export** | On launch Sage runs `specstory sync claude --output-dir .sage/history` (with `--no-version-check --silent`) to refresh markdown exports. |
-| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/markdown.ts` now strips `(sidechain)` turns so only primary Claude ↔ developer dialogue is reviewed. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions). |
+| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/markdown.ts` now strips `(sidechain)` turns so only primary Claude ↔ developer dialogue is reviewed. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
 | **Continuous Mode** | After initial review, file watcher detects new turns via Claude Code `Stop` hooks. Auto-syncs SpecStory and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
 | **Debug Mode** | Prompts/context are always archived under `.debug/`. Set `SAGE_DEBUG=1` to bypass Codex calls and emit mock critiques. |
@@ -120,6 +120,7 @@ This document gives any coding agent the context it needs to contribute safely a
    - WHY section (color-coded: green/yellow/red)
    - ALTERNATIVES section (if applicable)
    - QUESTIONS section (if applicable)
+   - MESSAGE FOR CLAUDE CODE AGENT section (only for Concerns/Critical Issues verdicts, when Sage has specific guidance for Claude)
 7. Keyboard controls in continuous mode:
    - `M` to manually trigger SpecStory sync (useful when hook doesn't fire or for testing)
    - `B` to exit and return to session picker

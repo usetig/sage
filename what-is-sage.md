@@ -12,7 +12,7 @@ Coding agents (Claude Code) can sound confident while being wrong or incomplete.
 
 - I run `sage` in my terminal and choose the Claude session I’m working in.
 - While I continue interacting with **Claude Code**, **Sage** silently reads the same conversation + relevant files and **thinks deeply** about the agent’s reasoning and proposed changes.
-- **Sage** posts concise critique cards (verdict, why, alternatives, questions) in its terminal. I don’t have to trigger it.
+- **Sage** posts concise critique cards (verdict, why, alternatives, questions, and optional messages for Claude) in its terminal. I don't have to trigger it.
 - If I send new prompts to Claude before Sage finishes, **Sage queues** new turns and reviews them in order.
 - (Future) I can ask Sage follow-ups in its terminal to dig deeper or request a more comprehensive review.
 

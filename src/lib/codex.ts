@@ -7,6 +7,7 @@ export interface CritiqueResponse {
   why: string;
   alternatives: string;
   questions: string;
+  message_for_agent: string;
 }
 
 const CRITIQUE_SCHEMA = {
@@ -19,8 +20,9 @@ const CRITIQUE_SCHEMA = {
     why: { type: 'string' },
     alternatives: { type: 'string' },
     questions: { type: 'string' },
+    message_for_agent: { type: 'string' },
   },
-  required: ['verdict', 'why', 'alternatives', 'questions'],
+  required: ['verdict', 'why', 'alternatives', 'questions', 'message_for_agent'],
   additionalProperties: false,
 } as const;
 
@@ -127,6 +129,15 @@ export function buildInitialPromptPayload(
     '- Why: Your main reasoning (required)',
     '- Alternatives: Suggested alternative approaches (empty string if not applicable)',
     '- Questions: Clarification questions for the developer (empty string if not applicable)',
+    '- message_for_agent: Direct communication with Claude Code agent (empty string if not applicable)',
+    '',
+    '# message_for_agent Guidelines',
+    'Use this field ONLY when verdict is "Concerns" or "Critical Issues" AND you have specific, actionable guidance for Claude.',
+    '- Write directly to Claude (e.g., "Please verify X" not "Claude should verify X")',
+    '- Be concise and specific - focus on what Claude should do differently or check',
+    '- Return empty string if verdict is "Approved" OR you have nothing specific to tell Claude',
+    '- This is NOT a summary - it\'s instructions/corrections for the agent',
+    '- Example: "Please verify the API endpoint exists in the codebase before suggesting it to the developer."',
     '',
     '# Guidelines',
     '- Focus on: correctness issues, missing steps, risky assumptions, hallucinations',
@@ -194,6 +205,15 @@ export function buildFollowupPromptPayload(
     '- Why: Your main reasoning (required)',
     '- Alternatives: Suggested alternative approaches (empty string if not applicable)',
     '- Questions: Clarification questions for the developer (empty string if not applicable)',
+    '- message_for_agent: Direct communication with Claude Code agent (empty string if not applicable)',
+    '',
+    '# message_for_agent Guidelines',
+    'Use this field ONLY when verdict is "Concerns" or "Critical Issues" AND you have specific, actionable guidance for Claude.',
+    '- Write directly to Claude (e.g., "Please verify X" not "Claude should verify X")',
+    '- Be concise and specific - focus on what Claude should do differently or check',
+    '- Return empty string if verdict is "Approved" OR you have nothing specific to tell Claude',
+    '- This is NOT a summary - it\'s instructions/corrections for the agent',
+    '- Example: "Please verify the API endpoint exists in the codebase before suggesting it to the developer."',
     '',
     '# Guidelines',
     '- Focus on: correctness issues, missing steps, risky assumptions, hallucinations',

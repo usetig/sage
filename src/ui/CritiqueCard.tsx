@@ -66,6 +66,13 @@ export function CritiqueCard({ critique, prompt, index, artifactPath }: Critique
         </Box>
       )}
 
+      {critique.message_for_agent && critique.message_for_agent.trim() && (
+        <Box marginTop={1} flexDirection="column">
+          <Text bold color="cyan">📋 MESSAGE FOR AGENT</Text>
+          <Text>{critique.message_for_agent}</Text>
+        </Box>
+      )}
+
       <Text>{'═'.repeat(60)}</Text>
     </Box>
   );
