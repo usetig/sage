@@ -14,17 +14,15 @@ interface ClarificationCardProps {
 
 export function ClarificationCard({ message }: ClarificationCardProps) {
   const isUser = message.role === 'user';
-  const borderColor = isUser ? 'blue' : 'magenta';
-  const label = isUser ? '👤 YOU' : '💬 SAGE';
+  const prefix = isUser ? '>' : '●';
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text bold color={borderColor}>
-        {label}
-      </Text>
-      <Box borderStyle="round" borderColor={borderColor} padding={1} marginTop={0.5}>
+      <Text>
+        <Text dimColor>{prefix}</Text>
+        {' '}
         <Text>{message.content}</Text>
-      </Box>
+      </Text>
     </Box>
   );
 }

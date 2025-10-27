@@ -7,8 +7,10 @@ import {
   buildInitialPromptPayload,
   buildFollowupPromptPayload,
   type CritiqueResponse,
+  codexInstance,
 } from './codex.js';
 import { isDebugMode, writeDebugReviewArtifact } from './debug.js';
+import { getOrCreateThread, loadThreadMetadata, saveThreadMetadata, updateThreadTurnCount } from './threads.js';
 
 export interface ReviewResult {
   critique: CritiqueResponse;
@@ -88,28 +90,79 @@ export async function performInitialReview(
     };
   }
 
-  onProgress?.('Requesting Codex critique…');
+  // Get or resume existing thread for this session
+  const metadata = await loadThreadMetadata(sessionId);
+  const thread = await getOrCreateThread(codexInstance, sessionId, onProgress);
   
-  // Add timeout to prevent infinite hangs
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
-  });
+  // Check if this is a resumed thread and if conversation has changed
+  const isResumedThread = metadata !== null;
+  const currentTurnCount = turns.length;
+  const lastReviewedTurnCount = metadata?.lastReviewedTurnCount ?? 0;
+  const hasNewTurns = currentTurnCount > lastReviewedTurnCount;
   
-  const reviewPromise = runInitialReview({
-    sessionId,
-    turns,
-    latestTurnSummary: latestTurn ?? undefined,
-  });
+  let critique: CritiqueResponse;
   
-  const { thread, critique } = await Promise.race([reviewPromise, timeoutPromise]);
-
-  onProgress?.('Review complete.');
+  if (isResumedThread && !hasNewTurns) {
+    // Thread exists and conversation unchanged - skip review
+    onProgress?.('No new turns detected, using resumed thread…');
+    critique = {
+      verdict: 'Approved',
+      why: 'Session previously reviewed. Entering continuous mode with existing context.',
+      alternatives: '',
+      questions: '',
+      message_for_agent: '',
+    };
+  } else if (isResumedThread && hasNewTurns) {
+    // Thread exists but conversation has new turns - incremental review
+    onProgress?.(`Detected ${currentTurnCount - lastReviewedTurnCount} new turn(s) since last review…`);
+    const newTurns = turns.slice(lastReviewedTurnCount);
+    
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+    });
+    
+    const reviewPromise = runFollowupReview(thread, { sessionId, newTurns });
+    const result = await Promise.race([reviewPromise, timeoutPromise]);
+    critique = result.critique;
+    
+    // Update turn count
+    await updateThreadTurnCount(sessionId, currentTurnCount);
+    onProgress?.('Incremental review complete.');
+  } else {
+    // New thread - do initial review
+    onProgress?.('Requesting Codex critique…');
+    
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+    });
+    
+    const reviewPromise = runInitialReview({
+      sessionId,
+      turns,
+      latestTurnSummary: latestTurn ?? undefined,
+    }, thread);
+    
+    const result = await Promise.race([reviewPromise, timeoutPromise]);
+    critique = result.critique;
+    
+    // Save thread with turn count (thread ID should be available after first run)
+    const threadId = thread.id;
+    if (threadId) {
+      await saveThreadMetadata(sessionId, threadId, currentTurnCount);
+      onProgress?.('Initial review complete. Thread saved.');
+    } else {
+      // Thread ID still not available - this shouldn't happen but handle gracefully
+      onProgress?.('Initial review complete. (Warning: thread ID not available for persistence)');
+    }
+  }
+  
+  const persistedThread = thread;
 
   return {
     critique,
     markdownPath,
     latestPrompt: latestTurn?.user,
-    thread,
+    thread: persistedThread,
     turns,
     debugInfo: {
       artifactPath,
@@ -256,6 +309,9 @@ export async function clarifyReview(
     '- Why you flagged it (correctness, consistency, risk, etc.)',
     '- What about the codebase context informed your view',
     '',
+    'IMPORTANT: Be concise. Reference files you already read in the initial review.',
+    'Do NOT re-read files unless absolutely necessary to answer the question.',
+    '',
     'If they ask you to suggest fixes or write code, politely remind them:',
     '"That\'s outside my scope as a reviewer. I can only explain my critique.',
     'For implementation help, ask your main coding agent (Claude, etc.)."',
@@ -264,7 +320,14 @@ export async function clarifyReview(
     'Respond conversationally but stay focused on EXPLAINING, not IMPLEMENTING.',
   ].join('\n');
 
-  const turn = await thread.run(prompt);
+  // Add timeout for clarifications (2 minutes - shorter than reviews)
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('Clarification timed out after 2 minutes')), 2 * 60 * 1000);
+  });
+
+  const clarificationPromise = thread.run(prompt);
+  const turn = await Promise.race([clarificationPromise, timeoutPromise]);
+  
   return { response: turn.finalResponse as string };
 }
 

@@ -42,6 +42,9 @@ export interface FollowupReviewContext {
 
 const singleton = new Codex();
 
+// Export the singleton for use in thread management
+export const codexInstance = singleton;
+
 export interface PromptPayload {
   prompt: string;
   promptText: string;
@@ -50,10 +53,11 @@ export interface PromptPayload {
 
 export async function runInitialReview(
   context: InitialReviewContext,
+  thread?: Thread,
 ): Promise<{ thread: Thread; critique: CritiqueResponse; promptPayload: PromptPayload }> {
-  const thread = singleton.startThread();
+  const reviewThread = thread ?? singleton.startThread();
   const payload = buildInitialPromptPayload(context);
-  const result = await thread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
+  const result = await reviewThread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
 
   // When outputSchema is used, finalResponse contains the structured object
   const critique = typeof result.finalResponse === 'object'
@@ -61,7 +65,7 @@ export async function runInitialReview(
     : JSON.parse(result.finalResponse as string) as CritiqueResponse;
 
   return {
-    thread,
+    thread: reviewThread,
     critique,
     promptPayload: payload,
   };

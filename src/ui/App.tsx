@@ -291,7 +291,6 @@ export default function App() {
       },
     ]);
 
-    setStatusMessages(['Sage is explaining...']);
 
     try {
       const { clarifyReview } = await import('../lib/review.js');
@@ -667,15 +666,14 @@ export default function App() {
 
       {screen === 'clarification' && activeClarificationReviewIndex !== null && (
         <Box marginTop={1} flexDirection="column">
-          <Text bold color="cyan">
-            💬 Clarifying Review #{activeClarificationReviewIndex + 1} with Sage
+          <Text>{'─'.repeat(80)}</Text>
+          <Text bold>
+            Clarifying Review #{activeClarificationReviewIndex + 1}
           </Text>
-
-          <Box marginTop={1}>
-            <Text dimColor italic>
-              (Sage can only explain their reasoning, not suggest implementations)
-            </Text>
-          </Box>
+          <Text dimColor>
+            Sage can only explain their reasoning, not suggest implementations
+          </Text>
+          <Text>{'─'.repeat(80)}</Text>
 
           {statusMessages.length > 0 && (
             <Box marginTop={1} flexDirection="column">
@@ -695,25 +693,25 @@ export default function App() {
               ))}
           </Box>
 
-          <Box marginTop={1} borderStyle="round" borderColor="cyan" padding={1}>
-            <Text>
-              <Text color="cyan">Ask Sage: </Text>
-              {isWaitingForClarification ? (
-                <Text dimColor italic>Waiting for Sage to respond...</Text>
-              ) : (
-                <>
-                  {clarificationInput}
-                  <Text inverse> </Text>
-                </>
-              )}
-            </Text>
-          </Box>
+          {isWaitingForClarification ? (
+            <Box marginTop={1}>
+              <Text dimColor italic>⏳ Sage is thinking...</Text>
+            </Box>
+          ) : (
+            <Box marginTop={1}>
+              <Text>
+                <Text dimColor>&gt; </Text>
+                {clarificationInput}
+                <Text inverse> </Text>
+              </Text>
+            </Box>
+          )}
 
           <Box marginTop={1}>
             <Text dimColor>
               {isWaitingForClarification
-                ? 'Sage is thinking...'
-                : 'Type your question • ↵ to send • ESC to exit clarification mode'}
+                ? '↵ send • ESC exit'
+                : '↵ send • ESC exit'}
             </Text>
           </Box>
         </Box>
