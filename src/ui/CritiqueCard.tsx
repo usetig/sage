@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import type { CritiqueResponse } from '../lib/codex.js';
 
 interface CritiqueCardProps {
@@ -29,11 +29,12 @@ export function CritiqueCard({
 }: CritiqueCardProps) {
   const symbol = VERDICT_SYMBOLS[critique.verdict] || '•';
   const color = VERDICT_COLORS[critique.verdict] || 'white';
+  const { stdout } = useStdout();
+  // Account for outer App container padding (1 space left + 1 space right = 2 total)
+  const terminalWidth = (stdout?.columns ?? 80) - 2;
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text>{'═'.repeat(60)}</Text>
-
       {prompt && (
         <Text dimColor>
           Reviewing response for: "{truncatePrompt(prompt)}"
@@ -74,7 +75,9 @@ export function CritiqueCard({
         </Box>
       )}
 
-      <Text>{'═'.repeat(60)}</Text>
+      <Box marginTop={1}>
+        <Text dimColor>{'—'.repeat(terminalWidth)}</Text>
+      </Box>
     </Box>
   );
 }
