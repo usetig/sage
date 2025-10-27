@@ -628,5 +628,5 @@ function formatStatus(
     return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel}`;
   }
 
-  return `Status: ⏺ Idle • Waiting for Claude activity • ${manualSyncLabel}`;
+  return `Status: ⏺ Waiting for Claude response • ${manualSyncLabel}`;
 }
