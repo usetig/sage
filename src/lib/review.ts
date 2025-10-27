@@ -89,11 +89,19 @@ export async function performInitialReview(
   }
 
   onProgress?.('Requesting Codex critique…');
-  const { thread, critique } = await runInitialReview({
+  
+  // Add timeout to prevent infinite hangs
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+  });
+  
+  const reviewPromise = runInitialReview({
     sessionId,
     turns,
     latestTurnSummary: latestTurn ?? undefined,
   });
+  
+  const { thread, critique } = await Promise.race([reviewPromise, timeoutPromise]);
 
   onProgress?.('Review complete.');
 
@@ -171,7 +179,15 @@ export async function performIncrementalReview(
   }
 
   onProgress?.('Requesting Codex critique…');
-  const { critique } = await runFollowupReview(thread, { sessionId, newTurns: turns });
+  
+  // Add timeout to prevent infinite hangs
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+  });
+  
+  const reviewPromise = runFollowupReview(thread, { sessionId, newTurns: turns });
+  
+  const { critique } = await Promise.race([reviewPromise, timeoutPromise]);
   onProgress?.('Review complete.');
 
   return {
@@ -190,3 +206,65 @@ function previewText(text: string, maxLength = 160): string {
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
+
+export async function clarifyReview(
+  thread: Thread | null,
+  userQuestion: string,
+  sessionId: string,
+): Promise<{ response: string }> {
+  const debug = isDebugMode();
+
+  if (debug) {
+    // Return mock clarification in debug mode
+    return {
+      response: [
+        'Debug mode active — Codex clarification skipped.',
+        `Session ID: ${sessionId}`,
+        '',
+        'Your question:',
+        userQuestion,
+        '',
+        'In a real run, Sage would explain its reasoning here.',
+      ].join('\n'),
+    };
+  }
+
+  if (!thread) {
+    throw new Error('No active Codex thread for clarification.');
+  }
+
+  const prompt = [
+    '# Developer Question About Your Critique',
+    userQuestion,
+    '',
+    '# CRITICAL CONSTRAINTS',
+    'Your role is EXPLANATION ONLY. You must:',
+    '- Explain your reasoning and what you meant',
+    '- Point to specific code locations or patterns',
+    '- Clarify why you reached your verdict',
+    '- Help the developer understand your review',
+    '',
+    'You must NEVER:',
+    '- Suggest implementations or fixes',
+    '- Write code or propose alternatives',
+    '- Act as a collaborator or implementer',
+    '- Step outside your "reviewer explaining their review" role',
+    '',
+    '# Instructions',
+    'The developer is asking you to clarify your critique. Help them understand:',
+    '- What specific code/pattern you were referring to',
+    '- Why you flagged it (correctness, consistency, risk, etc.)',
+    '- What about the codebase context informed your view',
+    '',
+    'If they ask you to suggest fixes or write code, politely remind them:',
+    '"That\'s outside my scope as a reviewer. I can only explain my critique.',
+    'For implementation help, ask your main coding agent (Claude, etc.)."',
+    '',
+    '# Response Format',
+    'Respond conversationally but stay focused on EXPLAINING, not IMPLEMENTING.',
+  ].join('\n');
+
+  const turn = await thread.run(prompt);
+  return { response: turn.finalResponse as string };
+}
+

@@ -91,11 +91,27 @@ function isInterruptTurn(turn: TurnSummary): boolean {
 
 function buildTurn(userLines: string[], agentLines: string[]): TurnSummary {
   return {
-    user: cleanupBlock(userLines),
+    user: cleanupUserPrompt(cleanupBlock(userLines)),
     agent: agentLines.length ? cleanupBlock(agentLines) : undefined,
   };
 }
 
 function cleanupBlock(lines: string[]): string {
   return lines.join('\n').trim();
+}
+
+function cleanupUserPrompt(text: string): string {
+  // Strip out problematic image file paths that Codex might try to read
+  // These are typically temp files that no longer exist or are inaccessible
+  
+  // Pattern 1: Absolute paths to temp directories with image extensions
+  // e.g., /var/folders/.../Screenshot.png or /tmp/image.jpg
+  let cleaned = text.replace(/['"]?(\/(?:var\/folders|tmp|private\/var\/folders)[^\s'"]+\.(?:png|jpg|jpeg|gif|webp|bmp))['"]?/gi, '[Image file path removed]');
+  
+  // Pattern 2: User provided an image message
+  if (text.includes('User provided an image')) {
+    cleaned = cleaned.replace(/User provided an image \([^)]+\)\./g, 'User provided an image.');
+  }
+  
+  return cleaned;
 }

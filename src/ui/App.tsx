@@ -19,9 +19,10 @@ import {
 } from '../lib/review.js';
 import { ensureStopHookConfigured } from '../lib/hooks.js';
 import { CritiqueCard } from './CritiqueCard.js';
+import { ClarificationCard } from './ClarificationCard.js';
 import { isDebugMode } from '../lib/debug.js';
 
-type Screen = 'loading' | 'error' | 'session-list' | 'running';
+type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
 
 const repositoryPath = path.resolve(process.cwd());
 
@@ -34,6 +35,13 @@ interface ReviewQueueItem {
   markdownPath: string;
   turns: TurnSummary[];
   promptPreview: string;
+}
+
+interface ClarificationMessage {
+  role: 'sage' | 'user';
+  content: string;
+  timestamp: Date;
+  relatedReviewIndex?: number;
 }
 
 const debugMode = isDebugMode();
@@ -50,6 +58,12 @@ export default function App() {
   const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
   const [isInitialReview, setIsInitialReview] = useState(false);
   const [manualSyncTriggered, setManualSyncTriggered] = useState(false);
+  
+  // Clarification mode state
+  const [clarificationMessages, setClarificationMessages] = useState<ClarificationMessage[]>([]);
+  const [clarificationInput, setClarificationInput] = useState('');
+  const [activeClarificationReviewIndex, setActiveClarificationReviewIndex] = useState<number | null>(null);
+  const [isWaitingForClarification, setIsWaitingForClarification] = useState(false);
 
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
@@ -95,6 +109,45 @@ export default function App() {
       }
       if (lower === 'm') {
         void handleManualSync();
+        return;
+      }
+      if (lower === 'c') {
+        // Enter clarification mode for the most recent review
+        const latestIndex = reviews.length - 1;
+        if (latestIndex >= 0) {
+          setActiveClarificationReviewIndex(latestIndex);
+          setScreen('clarification');
+          return;
+        }
+      }
+    }
+
+    if (screen === 'clarification') {
+      if (key.escape && !isWaitingForClarification) {
+        setScreen('running');
+        setActiveClarificationReviewIndex(null);
+        setClarificationInput('');
+        return;
+      }
+
+      if (key.return && clarificationInput.trim() && !isWaitingForClarification) {
+        void handleClarificationSubmit(clarificationInput.trim());
+        setClarificationInput('');
+        return;
+      }
+
+      // Don't allow input modifications while waiting for response
+      if (isWaitingForClarification) {
+        return;
+      }
+
+      if (key.backspace || key.delete) {
+        setClarificationInput((prev) => prev.slice(0, -1));
+        return;
+      }
+
+      if (input && !key.ctrl && !key.meta) {
+        setClarificationInput((prev) => prev + input);
         return;
       }
     }
@@ -212,6 +265,60 @@ export default function App() {
       const message = err instanceof Error ? err.message : 'Manual sync failed.';
       setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
       setManualSyncTriggered(false);
+    }
+  }
+
+  async function handleClarificationSubmit(question: string) {
+    if (!codexThreadRef.current && !debugMode) {
+      setStatusMessages(['No active Codex thread for clarification.']);
+      return;
+    }
+
+    if (activeClarificationReviewIndex === null) return;
+    if (isWaitingForClarification) return; // Prevent duplicate submissions
+
+    // Set waiting state to block further inputs
+    setIsWaitingForClarification(true);
+
+    // Add user question to clarification history
+    setClarificationMessages((prev) => [
+      ...prev,
+      {
+        role: 'user',
+        content: question,
+        timestamp: new Date(),
+        relatedReviewIndex: activeClarificationReviewIndex,
+      },
+    ]);
+
+    setStatusMessages(['Sage is explaining...']);
+
+    try {
+      const { clarifyReview } = await import('../lib/review.js');
+      const { response } = await clarifyReview(
+        codexThreadRef.current,
+        question,
+        activeSession!.sessionId,
+      );
+
+      // Add Sage's explanation to clarification history
+      setClarificationMessages((prev) => [
+        ...prev,
+        {
+          role: 'sage',
+          content: response,
+          timestamp: new Date(),
+          relatedReviewIndex: activeClarificationReviewIndex,
+        },
+      ]);
+
+      setStatusMessages([]);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Clarification failed';
+      setStatusMessages([`Clarification error: ${errorMsg}`]);
+    } finally {
+      // Always clear waiting state when done
+      setIsWaitingForClarification(false);
     }
   }
 
@@ -548,11 +655,66 @@ export default function App() {
               prompt={item.latestPrompt}
               index={index + 1}
               artifactPath={item.debugInfo?.artifactPath}
+              showClarificationHint={index === reviews.length - 1}
             />
           ))}
 
           <Box marginTop={1}>
             <Text dimColor>{formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered)}</Text>
+          </Box>
+        </Box>
+      )}
+
+      {screen === 'clarification' && activeClarificationReviewIndex !== null && (
+        <Box marginTop={1} flexDirection="column">
+          <Text bold color="cyan">
+            💬 Clarifying Review #{activeClarificationReviewIndex + 1} with Sage
+          </Text>
+
+          <Box marginTop={1}>
+            <Text dimColor italic>
+              (Sage can only explain their reasoning, not suggest implementations)
+            </Text>
+          </Box>
+
+          {statusMessages.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              {statusMessages.map((message, index) => (
+                <Text key={`${message}-${index}`} dimColor>
+                  {message}
+                </Text>
+              ))}
+            </Box>
+          )}
+
+          <Box marginTop={1} flexDirection="column">
+            {clarificationMessages
+              .filter((msg) => msg.relatedReviewIndex === activeClarificationReviewIndex)
+              .map((msg, idx) => (
+                <ClarificationCard key={idx} message={msg} />
+              ))}
+          </Box>
+
+          <Box marginTop={1} borderStyle="round" borderColor="cyan" padding={1}>
+            <Text>
+              <Text color="cyan">Ask Sage: </Text>
+              {isWaitingForClarification ? (
+                <Text dimColor italic>Waiting for Sage to respond...</Text>
+              ) : (
+                <>
+                  {clarificationInput}
+                  <Text inverse> </Text>
+                </>
+              )}
+            </Text>
+          </Box>
+
+          <Box marginTop={1}>
+            <Text dimColor>
+              {isWaitingForClarification
+                ? 'Sage is thinking...'
+                : 'Type your question • ↵ to send • ESC to exit clarification mode'}
+            </Text>
           </Box>
         </Box>
       )}
@@ -628,5 +790,5 @@ function formatStatus(
     return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel}`;
   }
 
-  return `Status: ⏺ Waiting for Claude response • ${manualSyncLabel}`;
+  return `Status: ⏺ Idle • Waiting for Claude activity • C to clarify latest review • ${manualSyncLabel}`;
 }

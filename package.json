@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "sage": "./dist/index.js"
+  },
   "scripts": {
     "start": "tsx src/index.tsx",
     "build": "tsc",

@@ -7,6 +7,7 @@ interface CritiqueCardProps {
   prompt?: string;
   index: number;
   artifactPath?: string;
+  showClarificationHint?: boolean;
 }
 
 const VERDICT_SYMBOLS = {
@@ -21,7 +22,7 @@ const VERDICT_COLORS = {
   'Critical Issues': 'red',
 } as const;
 
-export function CritiqueCard({ critique, prompt, index, artifactPath }: CritiqueCardProps) {
+export function CritiqueCard({ critique, prompt, index, artifactPath, showClarificationHint = false }: CritiqueCardProps) {
   const symbol = VERDICT_SYMBOLS[critique.verdict] || '•';
   const color = VERDICT_COLORS[critique.verdict] || 'white';
 
@@ -70,6 +71,14 @@ export function CritiqueCard({ critique, prompt, index, artifactPath }: Critique
         <Box marginTop={1} flexDirection="column">
           <Text bold color="cyan">📋 MESSAGE FOR AGENT</Text>
           <Text>{critique.message_for_agent}</Text>
+        </Box>
+      )}
+
+      {showClarificationHint && (
+        <Box marginTop={1}>
+          <Text dimColor italic>
+            Press C to clarify this critique with Sage
+          </Text>
         </Box>
       )}
 
