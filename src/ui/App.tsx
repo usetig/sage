@@ -735,7 +735,7 @@ function SessionRow({ session, index, isSelected }: SessionRowProps) {
   return (
     <Box>
       <Text inverse={isSelected}>
-        ● #{index + 1} {prompt} @ {repositoryPath} [{timestamp}]
+        ● #{index + 1} {prompt} [{timestamp}]
       </Text>
     </Box>
   );
