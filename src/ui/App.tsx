@@ -695,11 +695,9 @@ export default function App() {
         <Box marginTop={1} flexDirection="column">
           <Text>{'─'.repeat(80)}</Text>
           <Text bold>
-            Clarifying Review #{activeClarificationReviewIndex + 1}
+            Chat with Sage
           </Text>
-          <Text dimColor>
-            Sage can only explain their reasoning, not suggest implementations
-          </Text>
+
           <Text>{'─'.repeat(80)}</Text>
 
           {statusMessages.length > 0 && (

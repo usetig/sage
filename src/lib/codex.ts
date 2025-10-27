@@ -1,5 +1,5 @@
 import { Codex } from '@openai/codex-sdk';
-import type { Thread } from '@openai/codex-sdk';
+import type { Thread, ThreadOptions } from '@openai/codex-sdk';
 import type { TurnSummary } from './markdown.js';
 
 export interface CritiqueResponse {
@@ -45,6 +45,18 @@ const singleton = new Codex();
 // Export the singleton for use in thread management
 export const codexInstance = singleton;
 
+const DEFAULT_THREAD_OPTIONS: ThreadOptions = (() => {
+  const model = "gpt-4.1-mini"; // process.env.SAGE_CODEX_MODEL?.trim();
+  if (model) {
+    return { model };
+  }
+  return {};
+})();
+
+export function getConfiguredThreadOptions(): ThreadOptions {
+  return { ...DEFAULT_THREAD_OPTIONS };
+}
+
 export interface PromptPayload {
   prompt: string;
   promptText: string;
@@ -55,7 +67,7 @@ export async function runInitialReview(
   context: InitialReviewContext,
   thread?: Thread,
 ): Promise<{ thread: Thread; critique: CritiqueResponse; promptPayload: PromptPayload }> {
-  const reviewThread = thread ?? singleton.startThread();
+  const reviewThread = thread ?? singleton.startThread(getConfiguredThreadOptions());
   const payload = buildInitialPromptPayload(context);
   const result = await reviewThread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
 

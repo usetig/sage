@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { Thread } from '@openai/codex-sdk';
 import { Codex } from '@openai/codex-sdk';
+import { getConfiguredThreadOptions } from './codex.js';
 
 interface ThreadMetadata {
   threadId: string;
@@ -109,7 +110,7 @@ export async function getOrCreateThread(
   if (metadata) {
     onProgress?.('Resuming session…');
     try {
-      const thread = codex.resumeThread(metadata.threadId);
+      const thread = codex.resumeThread(metadata.threadId, getConfiguredThreadOptions());
       return thread;
     } catch (err) {
       // Thread couldn't be resumed (might have been deleted on Codex side)
@@ -119,7 +120,7 @@ export async function getOrCreateThread(
 
   // Create new thread
   onProgress?.('Initializing…');
-  const thread = codex.startThread();
+  const thread = codex.startThread(getConfiguredThreadOptions());
 
   // Thread ID might not be immediately available - this is okay
   // We'll save metadata after the first successful review instead
@@ -129,5 +130,4 @@ export async function getOrCreateThread(
   
   return thread;
 }
-
 
