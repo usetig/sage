@@ -113,10 +113,7 @@ export default function App() {
         return;
       }
       if (lower === 'w') {
-        const latestIndex = reviews.length - 1;
-        if (latestIndex >= 0) {
-          toggleWhyCollapse(latestIndex);
-        }
+        toggleAllApprovedWhy();
         return;
       }
       if (lower === 'c') {
@@ -362,6 +359,26 @@ export default function App() {
       }
       const next = [...prev];
       next[index] = !next[index];
+      return next;
+    });
+  }
+
+  function toggleAllApprovedWhy(): void {
+    setCollapsedWhy((prev) => {
+      // Check if any approved reviews have WHY collapsed
+      const hasAnyCollapsed = reviews.some((review, index) =>
+        review.critique.verdict === 'Approved' && prev[index] === true
+      );
+
+      // Create new array with updated values for approved reviews
+      const next = [...prev];
+      reviews.forEach((review, index) => {
+        if (review.critique.verdict === 'Approved') {
+          // If any are collapsed, expand all. Otherwise, collapse all.
+          next[index] = !hasAnyCollapsed;
+        }
+      });
+
       return next;
     });
   }
