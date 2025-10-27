@@ -665,7 +665,7 @@ export default function App() {
               const { status, keybindings, isReviewing } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
               return (
                 <>
-                  <Text color={isReviewing ? 'green' : undefined} dimColor={!isReviewing}>
+                  <Text color={isReviewing ? 'blue' : undefined} dimColor={!isReviewing}>
                     {status}
                   </Text>
                   <Text dimColor>{keybindings}</Text>
