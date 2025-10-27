@@ -105,32 +105,26 @@ export async function getOrCreateThread(
   onProgress?: (message: string) => void,
 ): Promise<Thread> {
   const metadata = await loadThreadMetadata(sessionId);
-  
+
   if (metadata) {
-    onProgress?.(`Resuming previous Codex thread for this session…`);
+    onProgress?.('Resuming session…');
     try {
       const thread = codex.resumeThread(metadata.threadId);
-      const threadIdPreview = metadata.threadId.slice(0, 8);
-      onProgress?.(`Resumed thread ${threadIdPreview}…`);
       return thread;
     } catch (err) {
       // Thread couldn't be resumed (might have been deleted on Codex side)
-      onProgress?.(`Could not resume thread, creating new one…`);
       await deleteThreadMetadata(sessionId);
     }
   }
-  
+
   // Create new thread
-  onProgress?.(`Creating new Codex thread…`);
+  onProgress?.('Initializing…');
   const thread = codex.startThread();
-  
+
   // Thread ID might not be immediately available - this is okay
   // We'll save metadata after the first successful review instead
   if (thread.id) {
     await saveThreadMetadata(sessionId, thread.id);
-    onProgress?.(`Created thread ${thread.id.slice(0, 8)}…`);
-  } else {
-    onProgress?.(`Created thread (ID pending)…`);
   }
   
   return thread;

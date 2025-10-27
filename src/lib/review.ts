@@ -34,16 +34,13 @@ export async function performInitialReview(
   const { sessionId, markdownPath } = session;
   const debug = isDebugMode();
 
-  onProgress?.('Reading SpecStory markdown…');
+  onProgress?.('Reading conversation…');
   const markdown = await fs.readFile(markdownPath, 'utf8');
   const turns = extractTurns(markdown);
   const latestTurn = turns.length ? turns[turns.length - 1] : null;
   const latestPromptPreview = latestTurn?.user
     ? previewText(latestTurn.user)
     : '(none captured)';
-
-  onProgress?.(`Latest user prompt: ${latestPromptPreview}`);
-  onProgress?.(`Markdown export: ${markdownPath}`);
 
   const promptPayload = buildInitialPromptPayload({
     sessionId,
@@ -114,7 +111,7 @@ export async function performInitialReview(
     };
   } else if (isResumedThread && hasNewTurns) {
     // Thread exists but conversation has new turns - incremental review
-    onProgress?.(`Detected ${currentTurnCount - lastReviewedTurnCount} new turn(s) since last review…`);
+    onProgress?.('Reviewing new conversation turns…');
     const newTurns = turns.slice(lastReviewedTurnCount);
     
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -124,10 +121,9 @@ export async function performInitialReview(
     const reviewPromise = runFollowupReview(thread, { sessionId, newTurns });
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
-    
+
     // Update turn count
     await updateThreadTurnCount(sessionId, currentTurnCount);
-    onProgress?.('Incremental review complete.');
   } else {
     // New thread - do initial review
     onProgress?.('Requesting Codex critique…');
@@ -149,10 +145,9 @@ export async function performInitialReview(
     const threadId = thread.id;
     if (threadId) {
       await saveThreadMetadata(sessionId, threadId, currentTurnCount);
-      onProgress?.('Initial review complete. Thread saved.');
     } else {
       // Thread ID still not available - this shouldn't happen but handle gracefully
-      onProgress?.('Initial review complete. (Warning: thread ID not available for persistence)');
+      onProgress?.('Warning: thread ID not available for persistence');
     }
   }
   
@@ -188,8 +183,7 @@ export async function performIncrementalReview(
   }
   const debug = isDebugMode();
 
-  const firstPromptPreview = previewText(turns[0].user);
-  onProgress?.(`Reviewing new turn(s) starting with: ${firstPromptPreview}`);
+  onProgress?.('Reviewing…');
   const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
 
   // Always create debug artifact regardless of debug mode
@@ -239,9 +233,8 @@ export async function performIncrementalReview(
   });
   
   const reviewPromise = runFollowupReview(thread, { sessionId, newTurns: turns });
-  
+
   const { critique } = await Promise.race([reviewPromise, timeoutPromise]);
-  onProgress?.('Review complete.');
 
   return {
     critique,

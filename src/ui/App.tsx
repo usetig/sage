@@ -390,7 +390,6 @@ export default function App() {
 
       const job = queueRef.current[0];
       setCurrentJob(job);
-      setStatusMessages([`Reviewing queued prompt: ${job.promptPreview}`]);
 
       const thread = codexThreadRef.current;
       if (!thread && !debugMode) {
@@ -605,7 +604,7 @@ export default function App() {
 
       {screen === 'loading' && (
         <Box marginTop={1}>
-          <Text>Syncing SpecStory history…</Text>
+          <Text>Loading sessions…</Text>
         </Box>
       )}
 
@@ -655,7 +654,6 @@ export default function App() {
               critique={item.critique}
               prompt={item.latestPrompt}
               index={index + 1}
-              artifactPath={item.debugInfo?.artifactPath}
               hideWhy={collapsedWhy[index] ?? false}
             />
           ))}

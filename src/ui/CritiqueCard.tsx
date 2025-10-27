@@ -6,7 +6,6 @@ interface CritiqueCardProps {
   critique: CritiqueResponse;
   prompt?: string;
   index: number;
-  artifactPath?: string;
   hideWhy?: boolean;
 }
 
@@ -26,7 +25,6 @@ export function CritiqueCard({
   critique,
   prompt,
   index,
-  artifactPath,
   hideWhy = false,
 }: CritiqueCardProps) {
   const symbol = VERDICT_SYMBOLS[critique.verdict] || '•';
@@ -38,13 +36,7 @@ export function CritiqueCard({
 
       {prompt && (
         <Text dimColor>
-          Review #{index} • "{truncatePrompt(prompt)}"
-        </Text>
-      )}
-
-      {artifactPath && (
-        <Text dimColor>
-          Debug artifact: {artifactPath}
+          Reviewing response for: "{truncatePrompt(prompt)}"
         </Text>
       )}
 
