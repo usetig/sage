@@ -615,7 +615,7 @@ export default function App() {
     <Box flexDirection="column" padding={1}>
       <Box borderStyle="double" borderColor="cyan" padding={1}>
         <Text bold color="cyan">
-          🧙 Sage — {getProjectName(repositoryPath)}
+          🧙 Sage — /{getProjectName(repositoryPath)}
         </Text>
       </Box>
 

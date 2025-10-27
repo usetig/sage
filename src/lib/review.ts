@@ -126,7 +126,7 @@ export async function performInitialReview(
     await updateThreadTurnCount(sessionId, currentTurnCount);
   } else {
     // New thread - do initial review
-    onProgress?.('Requesting Codex critique…');
+    onProgress?.('Analyzing codebase and chat history…');
     
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
@@ -225,7 +225,7 @@ export async function performIncrementalReview(
     throw new Error('No active Codex thread to continue the review.');
   }
 
-  onProgress?.('Requesting Codex critique…');
+  onProgress?.('Sage is reviewing the response…');
   
   // Add timeout to prevent infinite hangs
   const timeoutPromise = new Promise<never>((_, reject) => {
