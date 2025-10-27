@@ -660,8 +660,18 @@ export default function App() {
             />
           ))}
 
-          <Box marginTop={1}>
-            <Text dimColor>{formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered)}</Text>
+          <Box marginTop={1} flexDirection="column">
+            {(() => {
+              const { status, keybindings, isReviewing } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
+              return (
+                <>
+                  <Text color={isReviewing ? 'green' : undefined} dimColor={!isReviewing}>
+                    {status}
+                  </Text>
+                  <Text dimColor>{keybindings}</Text>
+                </>
+              );
+            })()}
           </Box>
         </Box>
       )}
@@ -775,13 +785,17 @@ function formatStatus(
   queueLength: number,
   isInitialReview: boolean,
   manualSyncTriggered: boolean,
-): string {
+): { status: string; keybindings: string; isReviewing: boolean } {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
   const toggleWhyLabel = 'W to toggle WHY';
   const pendingCount = currentJob ? Math.max(queueLength - 1, 0) : Math.max(queueLength, 0);
 
   if (isInitialReview) {
-    return 'Status: ⏵ Running initial review...';
+    return {
+      status: 'Status: ⏵ Running initial review...',
+      keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
+      isReviewing: true,
+    };
   }
 
   if (currentJob) {
@@ -789,8 +803,16 @@ function formatStatus(
       ? ` (${currentJob.turns.length} turns)`
       : '';
     const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
-    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel} • ${toggleWhyLabel}`;
+    return {
+      status: `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
+      keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
+      isReviewing: true,
+    };
   }
 
-  return `Status: ⏺ Idle • Waiting for Claude activity • C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`;
+  return {
+    status: 'Status: ⏺ Idle • Waiting for Claude activity',
+    keybindings: `C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`,
+    isReviewing: false,
+  };
 }
