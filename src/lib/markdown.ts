@@ -16,7 +16,8 @@ export function extractTurns(markdown: string): TurnSummary[] {
   let agentContent: string[] = [];
   const turns: TurnSummary[] = [];
 
-  for (const raw of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index];
     const line = raw.trim();
     const lowerLine = line.toLowerCase();
 
@@ -54,7 +55,13 @@ export function extractTurns(markdown: string): TurnSummary[] {
     }
 
     if (line.startsWith('---')) {
-      mode = 'idle';
+      const nextHeader = peekNextHeader(lines, index);
+      if (nextHeader === 'user' || nextHeader === 'agent' || nextHeader === 'sidechain') {
+        mode = 'idle';
+        continue;
+      }
+      if (mode === 'user') userContent.push(raw);
+      else if (mode === 'agent') agentContent.push(raw);
       continue;
     }
 
@@ -76,6 +83,25 @@ export function extractTurns(markdown: string): TurnSummary[] {
 
 function isSidechainHeader(lowerCasedHeader: string): boolean {
   return lowerCasedHeader.includes('(sidechain)');
+}
+
+function peekNextHeader(
+  lines: string[],
+  startIndex: number,
+): 'user' | 'agent' | 'sidechain' | null {
+  for (let i = startIndex + 1; i < lines.length; i += 1) {
+    const candidate = lines[i].trim();
+    if (!candidate) continue;
+    const lower = candidate.toLowerCase();
+    if (lower.startsWith('_**user')) {
+      return isSidechainHeader(lower) ? 'sidechain' : 'user';
+    }
+    if (lower.startsWith('_**agent')) {
+      return isSidechainHeader(lower) ? 'sidechain' : 'agent';
+    }
+    break;
+  }
+  return null;
 }
 
 function isInterruptTurn(turn: TurnSummary): boolean {

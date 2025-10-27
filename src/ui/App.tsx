@@ -777,6 +777,7 @@ function formatStatus(
   manualSyncTriggered: boolean,
 ): string {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
+  const pendingCount = currentJob ? Math.max(queueLength - 1, 0) : Math.max(queueLength, 0);
 
   if (isInitialReview) {
     return 'Status: ⏵ Running initial review...';
@@ -786,7 +787,7 @@ function formatStatus(
     const turnInfo = currentJob.turns.length > 1
       ? ` (${currentJob.turns.length} turns)`
       : '';
-    const queueInfo = queueLength > 0 ? ` • ${queueLength} queued` : '';
+    const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel}`;
   }
 

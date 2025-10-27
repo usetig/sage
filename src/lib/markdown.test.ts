@@ -9,6 +9,8 @@ Primary prompt
 
 _**Agent (claude-sonnet-4-5-20250929)**_
 Main agent begins response line one.
+---
+Main agent continues after horizontal rule.
 
 ---
 
@@ -43,6 +45,10 @@ function runTests(): void {
   assert.ok(
     turns[0]?.agent?.includes('Main agent begins response line one.'),
     'expected primary agent response to be captured',
+  );
+  assert.ok(
+    turns[0]?.agent?.includes('Main agent continues after horizontal rule.'),
+    'expected agent response text following internal horizontal rule to be captured',
   );
   assert.ok(
     turns[0]?.agent?.includes('Main agent wraps up after sub-agent work.'),
