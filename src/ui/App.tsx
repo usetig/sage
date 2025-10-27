@@ -811,7 +811,7 @@ function formatStatus(
   }
 
   return {
-    status: 'Status: ⏺ Idle • Waiting for Claude activity',
+    status: 'Status: ⏺ Waiting for Claude response',
     keybindings: `C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`,
     isReviewing: false,
   };
