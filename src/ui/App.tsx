@@ -54,6 +54,7 @@ export default function App() {
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [activeSession, setActiveSession] = useState<SpecstorySessionSummary | null>(null);
   const [reviews, setReviews] = useState<CompletedReview[]>([]);
+  const [collapsedWhy, setCollapsedWhy] = useState<boolean[]>([]);
   const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
   const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
   const [isInitialReview, setIsInitialReview] = useState(false);
@@ -109,6 +110,13 @@ export default function App() {
       }
       if (lower === 'm') {
         void handleManualSync();
+        return;
+      }
+      if (lower === 'w') {
+        const latestIndex = reviews.length - 1;
+        if (latestIndex >= 0) {
+          toggleWhyCollapse(latestIndex);
+        }
         return;
       }
       if (lower === 'c') {
@@ -197,15 +205,13 @@ export default function App() {
       const latestTurn = result.turns.length ? result.turns[result.turns.length - 1] : null;
       lastTurnSignatureRef.current = latestTurn ? computeTurnSignature(latestTurn) : null;
 
-      setReviews([
-        {
-          critique: result.critique,
-          markdownPath: result.markdownPath,
-          latestPrompt: result.latestPrompt,
-          debugInfo: result.debugInfo,
-          session,
-        },
-      ]);
+      appendReview({
+        critique: result.critique,
+        markdownPath: result.markdownPath,
+        latestPrompt: result.latestPrompt,
+        debugInfo: result.debugInfo,
+        session,
+      });
 
       const versionAfter = await getFileVersion(session.markdownPath);
       if (versionAfter) {
@@ -328,6 +334,7 @@ export default function App() {
     workerRunningRef.current = false;
     setCurrentJob(null);
     setReviews([]);
+    setCollapsedWhy([]);
     setStatusMessages([]);
     setActiveSession(null);
     setIsInitialReview(false);
@@ -341,6 +348,22 @@ export default function App() {
       await watcherRef.current.close().catch(() => undefined);
       watcherRef.current = null;
     }
+  }
+
+  function appendReview(review: CompletedReview): void {
+    setReviews((prev) => [...prev, review]);
+    setCollapsedWhy((prev) => [...prev, review.critique.verdict === 'Approved']);
+  }
+
+  function toggleWhyCollapse(index: number): void {
+    setCollapsedWhy((prev) => {
+      if (index < 0 || index >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      next[index] = !next[index];
+      return next;
+    });
   }
 
   function enqueueJob(job: ReviewQueueItem) {
@@ -388,16 +411,13 @@ export default function App() {
         );
 
         if (activeSession && activeSession.sessionId === job.sessionId) {
-          setReviews((prev) => [
-            ...prev,
-            {
-              critique: result.critique,
-              markdownPath: result.markdownPath,
-              latestPrompt: result.latestPrompt,
-              debugInfo: result.debugInfo,
-              session: activeSession,
-            },
-          ]);
+          appendReview({
+            critique: result.critique,
+            markdownPath: result.markdownPath,
+            latestPrompt: result.latestPrompt,
+            debugInfo: result.debugInfo,
+            session: activeSession,
+          });
         }
 
         if (job.turns.length) {
@@ -629,24 +649,6 @@ export default function App() {
             </Box>
           )}
 
-          {currentJob && (
-            <Box marginTop={1} flexDirection="column">
-              <Text>Current job:</Text>
-              <Text dimColor>{formatQueueLabel(currentJob)}</Text>
-            </Box>
-          )}
-
-          {queue.length > 0 && (
-            <Box marginTop={1} flexDirection="column">
-              <Text>Queued reviews:</Text>
-              {queue.map((item, index) => (
-                <Text key={`${item.sessionId}-${index}`} dimColor>
-                  {index + 1}. {formatQueueLabel(item)}
-                </Text>
-              ))}
-            </Box>
-          )}
-
           {reviews.map((item, index) => (
             <CritiqueCard
               key={`${item.session.sessionId}-${index}`}
@@ -654,7 +656,7 @@ export default function App() {
               prompt={item.latestPrompt}
               index={index + 1}
               artifactPath={item.debugInfo?.artifactPath}
-              showClarificationHint={index === reviews.length - 1}
+              hideWhy={collapsedWhy[index] ?? false}
             />
           ))}
 
@@ -775,6 +777,7 @@ function formatStatus(
   manualSyncTriggered: boolean,
 ): string {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
+  const toggleWhyLabel = 'W to toggle WHY';
   const pendingCount = currentJob ? Math.max(queueLength - 1, 0) : Math.max(queueLength, 0);
 
   if (isInitialReview) {
@@ -786,8 +789,8 @@ function formatStatus(
       ? ` (${currentJob.turns.length} turns)`
       : '';
     const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
-    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel}`;
+    return `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo} • ${manualSyncLabel} • ${toggleWhyLabel}`;
   }
 
-  return `Status: ⏺ Idle • Waiting for Claude activity • C to clarify latest review • ${manualSyncLabel}`;
+  return `Status: ⏺ Idle • Waiting for Claude activity • C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`;
 }
