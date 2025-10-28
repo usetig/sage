@@ -108,7 +108,7 @@ export async function getOrCreateThread(
   const metadata = await loadThreadMetadata(sessionId);
 
   if (metadata) {
-    onProgress?.('Resuming session…');
+    onProgress?.('loading previous context...');
     try {
       const thread = codex.resumeThread(metadata.threadId, getConfiguredThreadOptions());
       return thread;
@@ -119,7 +119,7 @@ export async function getOrCreateThread(
   }
 
   // Create new thread
-  onProgress?.('Initializing…');
+  onProgress?.('initializing review agent...');
   const thread = codex.startThread(getConfiguredThreadOptions());
 
   // Thread ID might not be immediately available - this is okay

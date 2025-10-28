@@ -34,7 +34,7 @@ export async function performInitialReview(
   const { sessionId, markdownPath } = session;
   const debug = isDebugMode();
 
-  onProgress?.('Reading conversation…');
+  onProgress?.('reading conversation history...');
   const markdown = await fs.readFile(markdownPath, 'utf8');
   const turns = extractTurns(markdown);
   const latestTurn = turns.length ? turns[turns.length - 1] : null;
@@ -101,7 +101,7 @@ export async function performInitialReview(
   
   if (isResumedThread && !hasNewTurns) {
     // Thread exists and conversation unchanged - skip review
-    onProgress?.('No new turns detected, using resumed thread…');
+    onProgress?.('resuming with existing context...');
     critique = {
       verdict: 'Approved',
       why: 'Session previously reviewed. Entering continuous mode with existing context.',
@@ -111,7 +111,7 @@ export async function performInitialReview(
     };
   } else if (isResumedThread && hasNewTurns) {
     // Thread exists but conversation has new turns - incremental review
-    onProgress?.('Reviewing new conversation turns…');
+    onProgress?.('examining new dialogue...');
     const newTurns = turns.slice(lastReviewedTurnCount);
     
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -126,7 +126,7 @@ export async function performInitialReview(
     await updateThreadTurnCount(sessionId, currentTurnCount);
   } else {
     // New thread - do initial review
-    onProgress?.('Analyzing codebase and chat history…');
+    onProgress?.('analyzing codebase context...');
     
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
@@ -183,7 +183,7 @@ export async function performIncrementalReview(
   }
   const debug = isDebugMode();
 
-  onProgress?.('Reviewing…');
+  onProgress?.('reviewing changes...');
   const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
 
   // Always create debug artifact regardless of debug mode
@@ -225,8 +225,8 @@ export async function performIncrementalReview(
     throw new Error('No active Codex thread to continue the review.');
   }
 
-  onProgress?.('Sage is reviewing the response…');
-  
+  onProgress?.('formulating response...');
+
   // Add timeout to prevent infinite hangs
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);

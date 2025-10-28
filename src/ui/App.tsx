@@ -20,6 +20,7 @@ import {
 import { ensureStopHookConfigured } from '../lib/hooks.js';
 import { CritiqueCard } from './CritiqueCard.js';
 import { ClarificationCard } from './ClarificationCard.js';
+import { Spinner } from './Spinner.js';
 import { isDebugMode } from '../lib/debug.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
@@ -51,7 +52,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SpecstorySessionSummary[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [statusMessages, setStatusMessages] = useState<string[]>([]);
+  const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<SpecstorySessionSummary | null>(null);
   const [reviews, setReviews] = useState<CompletedReview[]>([]);
   const [collapsedWhy, setCollapsedWhy] = useState<boolean[]>([]);
@@ -182,7 +183,7 @@ export default function App() {
     await resetContinuousState();
     setActiveSession(session);
     setScreen('running');
-    setStatusMessages(['Running initial review…']);
+    setCurrentStatusMessage('preparing initial review...');
     setIsInitialReview(true);
 
     try {
@@ -194,7 +195,7 @@ export default function App() {
 
       const result = await performInitialReview(
         { sessionId: session.sessionId, markdownPath: session.markdownPath },
-        (message) => setStatusMessages((prev) => [...prev, message]),
+        (message) => setCurrentStatusMessage(message),
       );
 
       codexThreadRef.current = result.thread;
@@ -216,17 +217,15 @@ export default function App() {
       }
 
       if (debugMode) {
-        const baseMessages = [
+        const debugInfo = [
           'Debug mode active — Codex agent bypassed.',
           `Session ID: ${session.sessionId}`,
           `SpecStory markdown: ${session.markdownPath}`,
-        ];
-        const artifactMessage = result.debugInfo?.artifactPath
-          ? [`Debug context artifact: ${result.debugInfo.artifactPath}`]
-          : [];
-        setStatusMessages([...baseMessages, ...artifactMessage]);
+          result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
+        ].filter(Boolean).join(' • ');
+        setCurrentStatusMessage(debugInfo);
       } else {
-        setStatusMessages([]);
+        setCurrentStatusMessage(null);
       }
       setIsInitialReview(false);
 
@@ -266,14 +265,14 @@ export default function App() {
       }, 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Manual sync failed.';
-      setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
+      setCurrentStatusMessage(`Manual sync error: ${message}`);
       setManualSyncTriggered(false);
     }
   }
 
   async function handleClarificationSubmit(question: string) {
     if (!codexThreadRef.current && !debugMode) {
-      setStatusMessages(['No active Codex thread for clarification.']);
+      setCurrentStatusMessage('No active Codex thread for clarification.');
       return;
     }
 
@@ -314,10 +313,10 @@ export default function App() {
         },
       ]);
 
-      setStatusMessages([]);
+      setCurrentStatusMessage(null);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Clarification failed';
-      setStatusMessages([`Clarification error: ${errorMsg}`]);
+      setCurrentStatusMessage(`Clarification error: ${errorMsg}`);
     } finally {
       // Always clear waiting state when done
       setIsWaitingForClarification(false);
@@ -332,7 +331,7 @@ export default function App() {
     setCurrentJob(null);
     setReviews([]);
     setCollapsedWhy([]);
-    setStatusMessages([]);
+    setCurrentStatusMessage(null);
     setActiveSession(null);
     setIsInitialReview(false);
     lastProcessedVersionRef.current = null;
@@ -387,7 +386,7 @@ export default function App() {
     if (!job.turns.length) return;
     queueRef.current = [...queueRef.current, job];
     setQueue(queueRef.current);
-    setStatusMessages((prev) => [...prev, `Queued review: ${job.promptPreview}`]);
+    // Status will be shown when job starts processing
     if (!workerRunningRef.current) {
       void processQueue();
     }
@@ -410,7 +409,7 @@ export default function App() {
 
       const thread = codexThreadRef.current;
       if (!thread && !debugMode) {
-        setStatusMessages((prev) => [...prev, 'No active Codex thread to continue the review.']);
+        setCurrentStatusMessage('No active Codex thread to continue the review.');
         break;
       }
 
@@ -423,7 +422,7 @@ export default function App() {
             thread,
             turns: job.turns,
           },
-          (message) => setStatusMessages((prev) => [...prev, message]),
+          (message) => setCurrentStatusMessage(message),
         );
 
         if (activeSession && activeSession.sessionId === job.sessionId) {
@@ -447,22 +446,20 @@ export default function App() {
         }
 
         if (debugMode) {
-          const debugMessages = [
+          const debugInfo = [
             'Debug mode active — Codex agent bypassed.',
             `Session ID: ${job.sessionId}`,
             `SpecStory markdown: ${job.markdownPath}`,
-          ];
-          const artifact = result.debugInfo?.artifactPath
-            ? `Debug context artifact: ${result.debugInfo.artifactPath}`
-            : null;
-          setStatusMessages(artifact ? [...debugMessages, artifact] : debugMessages);
+            result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
+          ].filter(Boolean).join(' • ');
+          setCurrentStatusMessage(debugInfo);
         } else {
-          setStatusMessages([]);
+          setCurrentStatusMessage(null);
         }
         completedJob = true;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
-        setStatusMessages((prev) => [...prev, `Review failed: ${message}`]);
+        setCurrentStatusMessage(`Review failed: ${message}`);
         setQueue([...queueRef.current]);
         break;
       }
@@ -510,7 +507,7 @@ export default function App() {
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to read updated markdown.';
-        setStatusMessages((prev) => [...prev, message]);
+        setCurrentStatusMessage(message);
       }
     };
 
@@ -575,7 +572,7 @@ export default function App() {
   async function reloadSessions() {
     setScreen('loading');
     setError(null);
-    setStatusMessages([]);
+    setCurrentStatusMessage(null);
     await resetContinuousState();
     try {
       await ensureStopHookConfigured();
@@ -655,16 +652,6 @@ export default function App() {
 
       {screen === 'running' && activeSession && (
         <Box marginTop={1} flexDirection="column">
-          {statusMessages.length > 0 && (
-            <Box marginTop={1} flexDirection="column">
-              {statusMessages.map((message, index) => (
-                <Text key={`${message}-${index}`} dimColor>
-                  {message}
-                </Text>
-              ))}
-            </Box>
-          )}
-
           {reviews.map((item, index) => (
             <CritiqueCard
               key={`${item.session.sessionId}-${index}`}
@@ -675,14 +662,38 @@ export default function App() {
             />
           ))}
 
+          {/* STATUS BAR: Shows review progress at the bottom where user's eyes naturally are
+              - Shows spinner with detailed progress from onProgress callbacks (currentStatusMessage)
+              - Falls back to high-level status (statusMessage) if no detailed progress
+              - Shows static text when not reviewing */}
           <Box marginTop={1} flexDirection="column">
             {(() => {
-              const { status, keybindings, isReviewing } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
+              const { status, keybindings, isReviewing, statusMessage } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
+
+              // Priority 1: Show detailed progress message with spinner
+              if (currentStatusMessage) {
+                return (
+                  <>
+                    <Spinner message={currentStatusMessage} />
+                    <Text dimColor>{keybindings}</Text>
+                  </>
+                );
+              }
+
+              // Priority 2: Show high-level status with spinner if reviewing
+              if (isReviewing && statusMessage) {
+                return (
+                  <>
+                    <Spinner message={statusMessage} />
+                    <Text dimColor>{keybindings}</Text>
+                  </>
+                );
+              }
+
+              // Priority 3: Show static waiting status
               return (
                 <>
-                  <Text color={isReviewing ? 'blue' : undefined} dimColor={!isReviewing}>
-                    {status}
-                  </Text>
+                  <Text dimColor>{status}</Text>
                   <Text dimColor>{keybindings}</Text>
                 </>
               );
@@ -700,13 +711,9 @@ export default function App() {
 
           <Text>{'─'.repeat(80)}</Text>
 
-          {statusMessages.length > 0 && (
-            <Box marginTop={1} flexDirection="column">
-              {statusMessages.map((message, index) => (
-                <Text key={`${message}-${index}`} dimColor>
-                  {message}
-                </Text>
-              ))}
+          {currentStatusMessage && (
+            <Box marginTop={1}>
+              <Text dimColor>{currentStatusMessage}</Text>
             </Box>
           )}
 
@@ -720,7 +727,7 @@ export default function App() {
 
           {isWaitingForClarification ? (
             <Box marginTop={1}>
-              <Text dimColor italic>⏳ Sage is thinking...</Text>
+              <Spinner message="sage is thinking..." />
             </Box>
           ) : (
             <Box marginTop={1}>
@@ -798,7 +805,7 @@ function formatStatus(
   queueLength: number,
   isInitialReview: boolean,
   manualSyncTriggered: boolean,
-): { status: string; keybindings: string; isReviewing: boolean } {
+): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string } {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
   const toggleWhyLabel = 'W to toggle WHY';
   const pendingCount = currentJob ? Math.max(queueLength - 1, 0) : Math.max(queueLength, 0);
@@ -806,6 +813,7 @@ function formatStatus(
   if (isInitialReview) {
     return {
       status: 'Status: ⏵ Running initial review...',
+      statusMessage: 'running initial review...',
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
     };
@@ -816,8 +824,10 @@ function formatStatus(
       ? ` (${currentJob.turns.length} turns)`
       : '';
     const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
+    const queueSuffix = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     return {
       status: `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
+      statusMessage: `reviewing "${currentJob.promptPreview}"${queueSuffix}`,
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
     };
