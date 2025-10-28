@@ -85,6 +85,7 @@ export default function App() {
   const codexThreadRef = useRef<Thread | null>(null);
   const lastTurnSignatureRef = useRef<string | null>(null);
   const manualSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const resumeStatusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reviewCacheRef = useRef<SessionReviewCache | null>(null);
 
   useEffect(() => {
@@ -211,7 +212,7 @@ export default function App() {
     } else {
       setStatusMessages([]);
     }
-    setCurrentStatusMessage('preparing initial review...');
+    setCurrentStatusMessage('loading session context...');
 
     setActiveSession(session);
     setScreen('running');
@@ -256,15 +257,20 @@ export default function App() {
         lastTurnSignatureRef.current = null;
       }
 
-      appendReview({
-        critique: result.critique,
-        markdownPath: result.markdownPath,
-        latestPrompt: result.latestPrompt,
-        debugInfo: result.debugInfo,
-        completedAt: result.completedAt,
-        turnSignature: turnSignature ?? undefined,
-        session,
-      });
+      const resumedWithoutChanges = result.isFreshCritique === false;
+
+      if (!resumedWithoutChanges) {
+        appendReview({
+          critique: result.critique,
+          markdownPath: result.markdownPath,
+          latestPrompt: result.latestPrompt,
+          debugInfo: result.debugInfo,
+          completedAt: result.completedAt,
+          turnSignature: turnSignature ?? undefined,
+          session,
+          isFreshCritique: result.isFreshCritique,
+        });
+      }
 
       const versionAfter = await getFileVersion(session.markdownPath);
       if (versionAfter) {
@@ -282,8 +288,21 @@ export default function App() {
           .join(' • ');
         setCurrentStatusMessage(debugInfo);
       } else {
-        setCurrentStatusMessage(null);
-        setStatusMessages([]);
+        if (resumeStatusTimeoutRef.current) {
+          clearTimeout(resumeStatusTimeoutRef.current);
+          resumeStatusTimeoutRef.current = null;
+        }
+        if (resumedWithoutChanges) {
+          setCurrentStatusMessage('Resuming Sage thread...');
+          resumeStatusTimeoutRef.current = setTimeout(() => {
+            setCurrentStatusMessage(null);
+            resumeStatusTimeoutRef.current = null;
+          }, 1200);
+          setStatusMessages(['Session previously reviewed. Using existing context...']);
+        } else {
+          setCurrentStatusMessage(null);
+          setStatusMessages([]);
+        }
       }
       setIsInitialReview(false);
 
@@ -386,6 +405,14 @@ export default function App() {
 
   async function resetContinuousState() {
     await cleanupWatcher();
+    if (manualSyncTimeoutRef.current) {
+      clearTimeout(manualSyncTimeoutRef.current);
+      manualSyncTimeoutRef.current = null;
+    }
+    if (resumeStatusTimeoutRef.current) {
+      clearTimeout(resumeStatusTimeoutRef.current);
+      resumeStatusTimeoutRef.current = null;
+    }
     queueRef.current = [];
     setQueue([]);
     workerRunningRef.current = false;
@@ -410,12 +437,16 @@ export default function App() {
   }
 
   function appendReview(review: CompletedReview): void {
+    if (review.isFreshCritique === false) {
+      return;
+    }
     setReviews((prev) => [...prev, review]);
     setCollapsedWhy((prev) => [...prev, review.critique.verdict === 'Approved']);
     void persistReview(review);
   }
 
   async function persistReview(review: CompletedReview): Promise<void> {
+    if (review.isFreshCritique === false) return;
     if (!review.turnSignature) return;
     const sessionId = review.session.sessionId;
     const stored: StoredReview = {
@@ -531,6 +562,7 @@ export default function App() {
             completedAt: result.completedAt,
             turnSignature: turnSignature ?? undefined,
             session: activeSession,
+            isFreshCritique: result.isFreshCritique,
           });
         } else if (job.turns.length) {
           const latestTurn = job.turns[job.turns.length - 1];
@@ -896,6 +928,7 @@ function toCompletedReview(stored: StoredReview, session: SpecstorySessionSummar
     completedAt: stored.completedAt,
     turnSignature: stored.turnSignature,
     session,
+    isFreshCritique: true,
   };
 }
 

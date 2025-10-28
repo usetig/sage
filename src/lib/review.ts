@@ -22,6 +22,7 @@ export interface ReviewResult {
     artifactPath: string;
     promptText: string;
   };
+  isFreshCritique: boolean;
 }
 
 export type InitialReviewResult = ReviewResult & {
@@ -87,6 +88,7 @@ export async function performInitialReview(
         artifactPath,
         promptText: promptPayload.promptText,
       },
+      isFreshCritique: true,
     };
   }
 
@@ -101,10 +103,11 @@ export async function performInitialReview(
   const hasNewTurns = currentTurnCount > lastReviewedTurnCount;
   
   let critique: CritiqueResponse;
+  let isFreshCritique = true;
   
   if (isResumedThread && !hasNewTurns) {
     // Thread exists and conversation unchanged - skip review
-    onProgress?.('resuming with existing context...');
+    onProgress?.('Resuming Sage thread...');
     critique = {
       verdict: 'Approved',
       why: 'Session previously reviewed. Entering continuous mode with existing context.',
@@ -112,6 +115,7 @@ export async function performInitialReview(
       questions: '',
       message_for_agent: '',
     };
+    isFreshCritique = false;
   } else if (isResumedThread && hasNewTurns) {
     // Thread exists but conversation has new turns - incremental review
     onProgress?.('examining new dialogue...');
@@ -124,6 +128,7 @@ export async function performInitialReview(
     const reviewPromise = runFollowupReview(thread, { sessionId, newTurns });
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
+    isFreshCritique = true;
 
     // Update turn count
     await updateThreadTurnCount(sessionId, currentTurnCount);
@@ -143,6 +148,7 @@ export async function performInitialReview(
     
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
+    isFreshCritique = true;
     
     // Save thread with turn count (thread ID should be available after first run)
     const threadId = thread.id;
@@ -168,6 +174,7 @@ export async function performInitialReview(
       artifactPath,
       promptText: promptPayload.promptText,
     },
+    isFreshCritique,
   };
 }
 
@@ -224,6 +231,7 @@ export async function performIncrementalReview(
         artifactPath,
         promptText: promptPayload.promptText,
       },
+      isFreshCritique: true,
     };
   }
 
@@ -251,6 +259,7 @@ export async function performIncrementalReview(
       artifactPath,
       promptText: promptPayload.promptText,
     },
+    isFreshCritique: true,
   };
 }
 
