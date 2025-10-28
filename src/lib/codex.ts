@@ -46,7 +46,7 @@ const singleton = new Codex();
 export const codexInstance = singleton;
 
 const DEFAULT_THREAD_OPTIONS: ThreadOptions = (() => {
-  const model = "gpt-4.1-mini"; // process.env.SAGE_CODEX_MODEL?.trim();
+  const model = "gpt-5-codex"; // process.env.SAGE_CODEX_MODEL?.trim();
   if (model) {
     return { model };
   }
