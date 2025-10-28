@@ -20,8 +20,16 @@ import {
 import { ensureStopHookConfigured } from '../lib/hooks.js';
 import { CritiqueCard } from './CritiqueCard.js';
 import { ClarificationCard } from './ClarificationCard.js';
-import { Spinner } from './Spinner.js';
 import { isDebugMode } from '../lib/debug.js';
+import {
+  loadReviewCache,
+  saveReviewCache,
+  appendReviewToCache,
+  ensureReviewCache,
+  deleteReviewCache,
+  type StoredReview,
+  type SessionReviewCache,
+} from '../lib/reviewsCache.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
 
@@ -29,6 +37,7 @@ const repositoryPath = path.resolve(process.cwd());
 
 interface CompletedReview extends ReviewResult {
   session: SpecstorySessionSummary;
+  turnSignature?: string;
 }
 
 interface ReviewQueueItem {
@@ -52,7 +61,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SpecstorySessionSummary[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
+  const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [activeSession, setActiveSession] = useState<SpecstorySessionSummary | null>(null);
   const [reviews, setReviews] = useState<CompletedReview[]>([]);
   const [collapsedWhy, setCollapsedWhy] = useState<boolean[]>([]);
@@ -74,6 +83,7 @@ export default function App() {
   const codexThreadRef = useRef<Thread | null>(null);
   const lastTurnSignatureRef = useRef<string | null>(null);
   const manualSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reviewCacheRef = useRef<SessionReviewCache | null>(null);
 
   useEffect(() => {
     void reloadSessions();
@@ -181,9 +191,26 @@ export default function App() {
 
   async function handleSessionSelection(session: SpecstorySessionSummary) {
     await resetContinuousState();
+    const cached = await loadReviewCache(session.sessionId);
+    reviewCacheRef.current = cached;
+    const restoredReviews = cached
+      ? cached.reviews.map((stored) => toCompletedReview(stored, session))
+      : [];
+
+    if (cached?.lastTurnSignature) {
+      lastTurnSignatureRef.current = cached.lastTurnSignature;
+    }
+
+    if (restoredReviews.length) {
+      setReviews(restoredReviews);
+      setCollapsedWhy(restoredReviews.map((item) => item.critique.verdict === 'Approved'));
+      setStatusMessages([`Restored ${restoredReviews.length} previous review${restoredReviews.length === 1 ? '' : 's'}.`, 'Running initial review…']);
+    } else {
+      setStatusMessages(['Running initial review…']);
+    }
+
     setActiveSession(session);
     setScreen('running');
-    setCurrentStatusMessage('preparing initial review...');
     setIsInitialReview(true);
 
     try {
@@ -195,19 +222,42 @@ export default function App() {
 
       const result = await performInitialReview(
         { sessionId: session.sessionId, markdownPath: session.markdownPath },
-        (message) => setCurrentStatusMessage(message),
+        (message) => setStatusMessages((prev) => [...prev, message]),
       );
 
       codexThreadRef.current = result.thread;
 
       const latestTurn = result.turns.length ? result.turns[result.turns.length - 1] : null;
-      lastTurnSignatureRef.current = latestTurn ? computeTurnSignature(latestTurn) : null;
+
+      if (reviewCacheRef.current?.lastTurnSignature) {
+        const cachedSignature = reviewCacheRef.current.lastTurnSignature;
+        const signatureStillPresent = result.turns.some((turn) => computeTurnSignature(turn) === cachedSignature);
+        if (!signatureStillPresent && reviewCacheRef.current.reviews.length) {
+          reviewCacheRef.current = null;
+          setReviews([]);
+          setCollapsedWhy([]);
+          await deleteReviewCache(session.sessionId);
+          setStatusMessages((prev) => [
+            ...prev,
+            'Cached critiques no longer match this session; cleared stored history.',
+          ]);
+        }
+      }
+
+      const turnSignature = latestTurn ? computeTurnSignature(latestTurn) : result.turnSignature ?? null;
+      if (turnSignature) {
+        lastTurnSignatureRef.current = turnSignature;
+      } else {
+        lastTurnSignatureRef.current = null;
+      }
 
       appendReview({
         critique: result.critique,
         markdownPath: result.markdownPath,
         latestPrompt: result.latestPrompt,
         debugInfo: result.debugInfo,
+        completedAt: result.completedAt,
+        turnSignature: turnSignature ?? undefined,
         session,
       });
 
@@ -217,15 +267,17 @@ export default function App() {
       }
 
       if (debugMode) {
-        const debugInfo = [
+        const baseMessages = [
           'Debug mode active — Codex agent bypassed.',
           `Session ID: ${session.sessionId}`,
           `SpecStory markdown: ${session.markdownPath}`,
-          result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
-        ].filter(Boolean).join(' • ');
-        setCurrentStatusMessage(debugInfo);
+        ];
+        const artifactMessage = result.debugInfo?.artifactPath
+          ? [`Debug context artifact: ${result.debugInfo.artifactPath}`]
+          : [];
+        setStatusMessages([...baseMessages, ...artifactMessage]);
       } else {
-        setCurrentStatusMessage(null);
+        setStatusMessages([]);
       }
       setIsInitialReview(false);
 
@@ -265,14 +317,14 @@ export default function App() {
       }, 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Manual sync failed.';
-      setCurrentStatusMessage(`Manual sync error: ${message}`);
+      setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
       setManualSyncTriggered(false);
     }
   }
 
   async function handleClarificationSubmit(question: string) {
     if (!codexThreadRef.current && !debugMode) {
-      setCurrentStatusMessage('No active Codex thread for clarification.');
+      setStatusMessages(['No active Codex thread for clarification.']);
       return;
     }
 
@@ -313,10 +365,10 @@ export default function App() {
         },
       ]);
 
-      setCurrentStatusMessage(null);
+      setStatusMessages([]);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Clarification failed';
-      setCurrentStatusMessage(`Clarification error: ${errorMsg}`);
+      setStatusMessages([`Clarification error: ${errorMsg}`]);
     } finally {
       // Always clear waiting state when done
       setIsWaitingForClarification(false);
@@ -331,12 +383,13 @@ export default function App() {
     setCurrentJob(null);
     setReviews([]);
     setCollapsedWhy([]);
-    setCurrentStatusMessage(null);
+    setStatusMessages([]);
     setActiveSession(null);
     setIsInitialReview(false);
     lastProcessedVersionRef.current = null;
     codexThreadRef.current = null;
     lastTurnSignatureRef.current = null;
+    reviewCacheRef.current = null;
   }
 
   async function cleanupWatcher() {
@@ -349,6 +402,32 @@ export default function App() {
   function appendReview(review: CompletedReview): void {
     setReviews((prev) => [...prev, review]);
     setCollapsedWhy((prev) => [...prev, review.critique.verdict === 'Approved']);
+    void persistReview(review);
+  }
+
+  async function persistReview(review: CompletedReview): Promise<void> {
+    if (!review.turnSignature) return;
+    const sessionId = review.session.sessionId;
+    const stored: StoredReview = {
+      turnSignature: review.turnSignature,
+      completedAt: review.completedAt,
+      latestPrompt: review.latestPrompt ?? null,
+      critique: review.critique,
+      artifactPath: review.debugInfo?.artifactPath,
+      promptText: review.debugInfo?.promptText,
+    };
+
+    const currentCache = ensureReviewCache(reviewCacheRef.current, sessionId);
+    const updatedCache = appendReviewToCache(currentCache, stored);
+    reviewCacheRef.current = updatedCache;
+    try {
+      await saveReviewCache(updatedCache);
+    } catch (error: any) {
+      setStatusMessages((prev) => [
+        ...prev,
+        `Failed to persist review history: ${error?.message ?? String(error)}`,
+      ]);
+    }
   }
 
   function toggleWhyCollapse(index: number): void {
@@ -386,7 +465,7 @@ export default function App() {
     if (!job.turns.length) return;
     queueRef.current = [...queueRef.current, job];
     setQueue(queueRef.current);
-    // Status will be shown when job starts processing
+    setStatusMessages((prev) => [...prev, `Queued review: ${job.promptPreview}`]);
     if (!workerRunningRef.current) {
       void processQueue();
     }
@@ -409,7 +488,7 @@ export default function App() {
 
       const thread = codexThreadRef.current;
       if (!thread && !debugMode) {
-        setCurrentStatusMessage('No active Codex thread to continue the review.');
+        setStatusMessages((prev) => [...prev, 'No active Codex thread to continue the review.']);
         break;
       }
 
@@ -422,20 +501,26 @@ export default function App() {
             thread,
             turns: job.turns,
           },
-          (message) => setCurrentStatusMessage(message),
+          (message) => setStatusMessages((prev) => [...prev, message]),
         );
 
         if (activeSession && activeSession.sessionId === job.sessionId) {
+          const latestTurn = job.turns.length ? job.turns[job.turns.length - 1] : null;
+          const turnSignature = latestTurn ? computeTurnSignature(latestTurn) : result.turnSignature ?? null;
+          if (turnSignature) {
+            lastTurnSignatureRef.current = turnSignature;
+          }
+
           appendReview({
             critique: result.critique,
             markdownPath: result.markdownPath,
             latestPrompt: result.latestPrompt,
             debugInfo: result.debugInfo,
+            completedAt: result.completedAt,
+            turnSignature: turnSignature ?? undefined,
             session: activeSession,
           });
-        }
-
-        if (job.turns.length) {
+        } else if (job.turns.length) {
           const latestTurn = job.turns[job.turns.length - 1];
           lastTurnSignatureRef.current = computeTurnSignature(latestTurn);
         }
@@ -446,20 +531,22 @@ export default function App() {
         }
 
         if (debugMode) {
-          const debugInfo = [
+          const debugMessages = [
             'Debug mode active — Codex agent bypassed.',
             `Session ID: ${job.sessionId}`,
             `SpecStory markdown: ${job.markdownPath}`,
-            result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
-          ].filter(Boolean).join(' • ');
-          setCurrentStatusMessage(debugInfo);
+          ];
+          const artifact = result.debugInfo?.artifactPath
+            ? `Debug context artifact: ${result.debugInfo.artifactPath}`
+            : null;
+          setStatusMessages(artifact ? [...debugMessages, artifact] : debugMessages);
         } else {
-          setCurrentStatusMessage(null);
+          setStatusMessages([]);
         }
         completedJob = true;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
-        setCurrentStatusMessage(`Review failed: ${message}`);
+        setStatusMessages((prev) => [...prev, `Review failed: ${message}`]);
         setQueue([...queueRef.current]);
         break;
       }
@@ -507,7 +594,7 @@ export default function App() {
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to read updated markdown.';
-        setCurrentStatusMessage(message);
+        setStatusMessages((prev) => [...prev, message]);
       }
     };
 
@@ -572,7 +659,7 @@ export default function App() {
   async function reloadSessions() {
     setScreen('loading');
     setError(null);
-    setCurrentStatusMessage(null);
+    setStatusMessages([]);
     await resetContinuousState();
     try {
       await ensureStopHookConfigured();
@@ -652,48 +739,34 @@ export default function App() {
 
       {screen === 'running' && activeSession && (
         <Box marginTop={1} flexDirection="column">
+          {statusMessages.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              {statusMessages.map((message, index) => (
+                <Text key={`${message}-${index}`} dimColor>
+                  {message}
+                </Text>
+              ))}
+            </Box>
+          )}
+
           {reviews.map((item, index) => (
-            <CritiqueCard
-              key={`${item.session.sessionId}-${index}`}
-              critique={item.critique}
-              prompt={item.latestPrompt}
-              index={index + 1}
-              hideWhy={collapsedWhy[index] ?? false}
-            />
+          <CritiqueCard
+            key={`${item.session.sessionId}-${index}`}
+            critique={item.critique}
+            prompt={item.latestPrompt}
+            index={index + 1}
+            hideWhy={collapsedWhy[index] ?? false}
+          />
           ))}
 
-          {/* STATUS BAR: Shows review progress at the bottom where user's eyes naturally are
-              - Shows spinner with detailed progress from onProgress callbacks (currentStatusMessage)
-              - Falls back to high-level status (statusMessage) if no detailed progress
-              - Shows static text when not reviewing */}
           <Box marginTop={1} flexDirection="column">
             {(() => {
-              const { status, keybindings, isReviewing, statusMessage } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
-
-              // Priority 1: Show detailed progress message with spinner
-              if (currentStatusMessage) {
-                return (
-                  <>
-                    <Spinner message={currentStatusMessage} />
-                    <Text dimColor>{keybindings}</Text>
-                  </>
-                );
-              }
-
-              // Priority 2: Show high-level status with spinner if reviewing
-              if (isReviewing && statusMessage) {
-                return (
-                  <>
-                    <Spinner message={statusMessage} />
-                    <Text dimColor>{keybindings}</Text>
-                  </>
-                );
-              }
-
-              // Priority 3: Show static waiting status
+              const { status, keybindings, isReviewing } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
               return (
                 <>
-                  <Text dimColor>{status}</Text>
+                  <Text color={isReviewing ? 'blue' : undefined} dimColor={!isReviewing}>
+                    {status}
+                  </Text>
                   <Text dimColor>{keybindings}</Text>
                 </>
               );
@@ -711,9 +784,13 @@ export default function App() {
 
           <Text>{'─'.repeat(80)}</Text>
 
-          {currentStatusMessage && (
-            <Box marginTop={1}>
-              <Text dimColor>{currentStatusMessage}</Text>
+          {statusMessages.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              {statusMessages.map((message, index) => (
+                <Text key={`${message}-${index}`} dimColor>
+                  {message}
+                </Text>
+              ))}
             </Box>
           )}
 
@@ -727,7 +804,7 @@ export default function App() {
 
           {isWaitingForClarification ? (
             <Box marginTop={1}>
-              <Spinner message="sage is thinking..." />
+              <Text dimColor italic>⏳ Sage is thinking...</Text>
             </Box>
           ) : (
             <Box marginTop={1}>
@@ -776,6 +853,21 @@ function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength - 1).trimEnd() + '…';
 }
 
+function toCompletedReview(stored: StoredReview, session: SpecstorySessionSummary): CompletedReview {
+  return {
+    critique: stored.critique,
+    markdownPath: session.markdownPath,
+    latestPrompt: stored.latestPrompt ?? undefined,
+    debugInfo:
+      stored.artifactPath && stored.promptText
+        ? { artifactPath: stored.artifactPath, promptText: stored.promptText }
+        : undefined,
+    completedAt: stored.completedAt,
+    turnSignature: stored.turnSignature,
+    session,
+  };
+}
+
 function formatRelativeTime(isoTimestamp: string): string {
   const timestamp = new Date(isoTimestamp);
   if (Number.isNaN(timestamp.getTime())) return 'Unknown time';
@@ -805,7 +897,7 @@ function formatStatus(
   queueLength: number,
   isInitialReview: boolean,
   manualSyncTriggered: boolean,
-): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string } {
+): { status: string; keybindings: string; isReviewing: boolean } {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
   const toggleWhyLabel = 'W to toggle WHY';
   const pendingCount = currentJob ? Math.max(queueLength - 1, 0) : Math.max(queueLength, 0);
@@ -813,7 +905,6 @@ function formatStatus(
   if (isInitialReview) {
     return {
       status: 'Status: ⏵ Running initial review...',
-      statusMessage: 'running initial review...',
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
     };
@@ -824,10 +915,8 @@ function formatStatus(
       ? ` (${currentJob.turns.length} turns)`
       : '';
     const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
-    const queueSuffix = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     return {
       status: `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
-      statusMessage: `reviewing "${currentJob.promptPreview}"${queueSuffix}`,
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
     };

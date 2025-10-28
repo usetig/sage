@@ -15,6 +15,8 @@ import { getOrCreateThread, loadThreadMetadata, saveThreadMetadata, updateThread
 export interface ReviewResult {
   critique: CritiqueResponse;
   markdownPath: string;
+  completedAt: string;
+  turnSignature?: string;
   latestPrompt?: string;
   debugInfo?: {
     artifactPath: string;
@@ -77,6 +79,7 @@ export async function performInitialReview(
         message_for_agent: '',
       },
       markdownPath,
+      completedAt: new Date().toISOString(),
       latestPrompt: latestTurn?.user,
       thread: null,
       turns,
@@ -152,10 +155,12 @@ export async function performInitialReview(
   }
   
   const persistedThread = thread;
+  const completedAt = new Date().toISOString();
 
   return {
     critique,
     markdownPath,
+    completedAt,
     latestPrompt: latestTurn?.user,
     thread: persistedThread,
     turns,
@@ -213,6 +218,7 @@ export async function performIncrementalReview(
         message_for_agent: '',
       },
       markdownPath,
+      completedAt: new Date().toISOString(),
       latestPrompt: turns[turns.length - 1]?.user,
       debugInfo: {
         artifactPath,
@@ -239,6 +245,7 @@ export async function performIncrementalReview(
   return {
     critique,
     markdownPath,
+    completedAt: new Date().toISOString(),
     latestPrompt: turns[turns.length - 1]?.user,
     debugInfo: {
       artifactPath,
@@ -323,4 +330,3 @@ export async function clarifyReview(
   
   return { response: turn.finalResponse as string };
 }
-

@@ -177,6 +177,10 @@ Sage requires running in a Git-tracked directory. Initialize git:
 git init
 ```
 
+## Known Limitations
+
+- **Single-instance assumption** — Running multiple Sage processes against the same repository can race on `.sage/history/`, `.sage/threads/`, or the new review cache. Keep one instance active per repo to avoid desynchronised queues or duplicate critiques.
+
 ## Configuration
 
 ### Hook Configuration

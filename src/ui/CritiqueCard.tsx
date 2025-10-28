@@ -35,11 +35,9 @@ export function CritiqueCard({
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      {prompt && (
-        <Text dimColor>
-          Reviewing response for: "{truncatePrompt(prompt)}"
-        </Text>
-      )}
+      <Text dimColor>
+        Reviewing response for: {prompt ? `"${truncatePrompt(prompt)}"` : `Review #${index}`}
+      </Text>
 
       <Box marginTop={1}>
         <Text>
