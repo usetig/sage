@@ -535,7 +535,6 @@ export default function App() {
         break;
       }
 
-      let completedJob = false;
       try {
         const result = await performIncrementalReview(
           {
@@ -587,19 +586,17 @@ export default function App() {
         } else {
           setCurrentStatusMessage(null);
         }
-        completedJob = true;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
         setCurrentStatusMessage(`Review failed: ${message}`);
-        setStatusMessages((prev) => [...prev, `Review failed: ${message}`]);
-        setQueue([...queueRef.current]);
-        break;
+        setStatusMessages((prev) => [...prev, `Review failed for "${job.promptPreview}": ${message}`]);
+        // Don't break - continue to next item in queue
       }
 
-      if (completedJob) {
-        queueRef.current = queueRef.current.slice(1);
-        setQueue(queueRef.current);
-      }
+      // Always remove the job from queue whether it succeeded or failed
+      queueRef.current = queueRef.current.slice(1);
+      setQueue(queueRef.current);
+      setCurrentJob(null);
     }
 
     workerRunningRef.current = false;

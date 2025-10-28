@@ -120,11 +120,11 @@ export async function performInitialReview(
     // Thread exists but conversation has new turns - incremental review
     onProgress?.('examining new dialogue...');
     const newTurns = turns.slice(lastReviewedTurnCount);
-    
+
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+      setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
     });
-    
+
     const reviewPromise = runFollowupReview(thread, { sessionId, newTurns });
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
@@ -135,21 +135,21 @@ export async function performInitialReview(
   } else {
     // New thread - do initial review
     onProgress?.('analyzing codebase context...');
-    
+
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+      setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
     });
-    
+
     const reviewPromise = runInitialReview({
       sessionId,
       turns,
       latestTurnSummary: latestTurn ?? undefined,
     }, thread);
-    
+
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
     isFreshCritique = true;
-    
+
     // Save thread with turn count (thread ID should be available after first run)
     const threadId = thread.id;
     if (threadId) {
@@ -243,9 +243,9 @@ export async function performIncrementalReview(
 
   // Add timeout to prevent infinite hangs
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+    setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
   });
-  
+
   const reviewPromise = runFollowupReview(thread, { sessionId, newTurns: turns });
 
   const { critique } = await Promise.race([reviewPromise, timeoutPromise]);
