@@ -195,7 +195,6 @@ export async function performIncrementalReview(
   }
   const debug = isDebugMode();
 
-  onProgress?.('reviewing changes...');
   const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
 
   // Always create debug artifact regardless of debug mode
@@ -238,8 +237,6 @@ export async function performIncrementalReview(
   if (!thread) {
     throw new Error('No active Codex thread to continue the review.');
   }
-
-  onProgress?.('Sage is thinking...');
 
   // Add timeout to prevent infinite hangs
   const timeoutPromise = new Promise<never>((_, reject) => {

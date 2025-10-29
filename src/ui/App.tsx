@@ -995,8 +995,8 @@ function formatStatus(
     const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     const queueSuffix = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     return {
-      status: `Status: ⏵ Reviewing "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
-      statusMessage: `reviewing "${currentJob.promptPreview}"${queueSuffix}`,
+      status: `Status: ⏵ Reviewing response for "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
+      statusMessage: `reviewing response for "${currentJob.promptPreview}"${queueSuffix}`,
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
       queuedItems,
