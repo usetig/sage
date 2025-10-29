@@ -16,11 +16,11 @@ This document gives any coding agent the context it needs to contribute safely a
 
 | Area | Status |
 | --- | --- |
-| **Session Discovery** | Lists sessions from SpecStory markdown exports in `.sage/history/`. Automatically filters warmup-only stubs. |
+| **Session Discovery** | Lists sessions from hook-emitted metadata in `.sage/runtime/sessions/`. Automatically filters warmup-only stubs. |
 | **UI** | Ink TUI (`src/ui/App.tsx`) with structured critique cards, queue display, and real-time status. Shows project name in header. |
-| **Export** | On launch Sage runs `specstory sync claude --output-dir .sage/history` (with `--no-version-check --silent`) to refresh markdown exports. |
-| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/markdown.ts` now strips `(sidechain)` turns so only primary Claude ↔ developer dialogue is reviewed. Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
-| **Continuous Mode** | After initial review, file watcher detects new turns via Claude Code `Stop` hooks. Auto-syncs SpecStory and enqueues reviews (FIFO). |
+| **Export** | Claude hooks write per-session metadata and review signals into `.sage/runtime/` (no external CLI required). |
+| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/jsonl.ts` parses Claude JSONL logs (primary turns only). Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
+| **Continuous Mode** | After initial review, Sage watches `.sage/runtime/needs-review/` for hook signals and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
 | **Debug Mode** | Prompts/context are always archived under `.debug/`. Set `SAGE_DEBUG=1` to bypass Codex calls and emit mock critiques. |
 
@@ -30,33 +30,27 @@ This document gives any coding agent the context it needs to contribute safely a
 
 ```
 ┌─ Initial Setup ─────────────────────────────────────────┐
-│ SpecStory sync (src/lib/specstory.ts)                   │
-│    └ writes markdown exports to .sage/history/          │
+│ Hook installer (src/scripts/configureHooks.ts)          │
+│    └ registers SessionStart/End/Stop/UserPromptSubmit   │
 │                                                          │
-│ Session listing (src/lib/specstory.ts)                  │
-│    └ parses markdown, filters warmups                   │
+│ Hook shim (src/hooks/sageHook.ts)                       │
+│    └ writes .sage/runtime/sessions/*.json               │
 │                                                          │
 │ Session picker (src/ui/App.tsx)                         │
 │    └ user selects session                               │
 │                                                          │
-│ Initial review (src/lib/review.ts)                      │
-│    └ full context review via Codex SDK                  │
-│                                                          │
-│ Hook installation (src/lib/hooks.ts)                    │
-│    └ auto-configures Claude Stop hook                   │
+│ Initial review (src/lib/review.ts + jsonl.ts)           │
+│    └ loads transcript JSONL + runs Codex review         │
 └──────────────────────────────────────────────────────────┘
 
 ┌─ Continuous Mode (after initial review) ────────────────┐
-│ User prompts Claude → Claude finishes                    │
+│ User prompts Claude → Stop hook fires                    │
 │    ↓                                                     │
-│ Stop hook fires → specstory sync -s {sessionId}         │
+│ Hook shim writes .sage/runtime/needs-review/{sessionId} │
 │    ↓                                                     │
-│ .sage/history/*.md updated                              │
+│ App.tsx watcher notices new signal                      │
 │    ↓                                                     │
-│ Chokidar file watcher detects change                    │
-│    ↓                                                     │
-│ Extract new turns (src/lib/markdown.ts)                 │
-│    └ scan backwards to last signature                   │
+│ extractTurns(jsonl) for new assistant response          │
 │    ↓                                                     │
 │ Enqueue review job (FIFO queue in App.tsx)              │
 │    ↓                                                     │

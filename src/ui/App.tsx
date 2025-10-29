@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import path from 'path';
 import { promises as fs } from 'fs';
 import chokidar, { FSWatcher } from 'chokidar';
@@ -6,18 +5,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Key } from 'ink';
 import type { Thread } from '@openai/codex-sdk';
-import {
-  listSpecstorySessions,
-  syncSpecstoryHistory,
-  type SpecstorySessionSummary,
-} from '../lib/specstory.js';
-import { extractTurns, type TurnSummary } from '../lib/markdown.js';
+import { listActiveSessions, extractTurns, type ActiveSession, type TurnSummary } from '../lib/jsonl.js';
 import {
   performInitialReview,
   performIncrementalReview,
   type ReviewResult,
 } from '../lib/review.js';
-import { ensureStopHookConfigured } from '../lib/hooks.js';
 import { CritiqueCard } from './CritiqueCard.js';
 import { ClarificationCard } from './ClarificationCard.js';
 import { Spinner } from './Spinner.js';
@@ -37,15 +30,17 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification'
 const repositoryPath = path.resolve(process.cwd());
 
 interface CompletedReview extends ReviewResult {
-  session: SpecstorySessionSummary;
+  session: ActiveSession;
   turnSignature?: string;
 }
 
 interface ReviewQueueItem {
   sessionId: string;
-  markdownPath: string;
+  transcriptPath: string;
   turns: TurnSummary[];
   promptPreview: string;
+  latestTurnSignature: string | null;
+  signalPath: string;
 }
 
 interface ClarificationMessage {
@@ -60,11 +55,11 @@ const debugMode = isDebugMode();
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
   const [error, setError] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<SpecstorySessionSummary[]>([]);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
-  const [activeSession, setActiveSession] = useState<SpecstorySessionSummary | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [reviews, setReviews] = useState<CompletedReview[]>([]);
   const [collapsedWhy, setCollapsedWhy] = useState<boolean[]>([]);
   const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
@@ -81,12 +76,12 @@ export default function App() {
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
   const watcherRef = useRef<FSWatcher | null>(null);
-  const lastProcessedVersionRef = useRef<string | null>(null);
   const codexThreadRef = useRef<Thread | null>(null);
   const lastTurnSignatureRef = useRef<string | null>(null);
   const manualSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const resumeStatusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reviewCacheRef = useRef<SessionReviewCache | null>(null);
+  const processedSignalsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void reloadSessions();
@@ -193,16 +188,19 @@ export default function App() {
     void processQueue();
   }, [screen, activeSession, queue.length]);
 
-  async function handleSessionSelection(session: SpecstorySessionSummary) {
+  async function handleSessionSelection(session: ActiveSession) {
     await resetContinuousState();
     const cached = await loadReviewCache(session.sessionId);
     reviewCacheRef.current = cached;
+
     const restoredReviews = cached
       ? cached.reviews.map((stored) => toCompletedReview(stored, session))
       : [];
 
     if (cached?.lastTurnSignature) {
       lastTurnSignatureRef.current = cached.lastTurnSignature;
+    } else {
+      lastTurnSignatureRef.current = null;
     }
 
     if (restoredReviews.length) {
@@ -219,24 +217,18 @@ export default function App() {
     setIsInitialReview(true);
 
     try {
-      await syncSpecstoryHistory();
-      const versionBefore = await getFileVersion(session.markdownPath);
-      if (versionBefore) {
-        lastProcessedVersionRef.current = versionBefore;
-      }
+      const lastReviewedUuid = cached?.lastTurnSignature ?? null;
 
       const result = await performInitialReview(
-        { sessionId: session.sessionId, markdownPath: session.markdownPath },
+        { sessionId: session.sessionId, transcriptPath: session.transcriptPath, lastReviewedUuid },
         (message) => setCurrentStatusMessage(message),
       );
 
       codexThreadRef.current = result.thread;
 
-      const latestTurn = result.turns.length ? result.turns[result.turns.length - 1] : null;
-
       if (reviewCacheRef.current?.lastTurnSignature) {
         const cachedSignature = reviewCacheRef.current.lastTurnSignature;
-        const signatureStillPresent = result.turns.some((turn) => computeTurnSignature(turn) === cachedSignature);
+        const signatureStillPresent = result.turns.some((turn) => turn.assistantUuid === cachedSignature);
         if (!signatureStillPresent && reviewCacheRef.current.reviews.length) {
           reviewCacheRef.current = null;
           setReviews([]);
@@ -250,11 +242,8 @@ export default function App() {
         }
       }
 
-      const turnSignature = latestTurn ? computeTurnSignature(latestTurn) : result.turnSignature ?? null;
-      if (turnSignature) {
-        lastTurnSignatureRef.current = turnSignature;
-      } else {
-        lastTurnSignatureRef.current = null;
+      if (result.turnSignature) {
+        lastTurnSignatureRef.current = result.turnSignature;
       }
 
       const resumedWithoutChanges = result.isFreshCritique === false;
@@ -262,26 +251,21 @@ export default function App() {
       if (!resumedWithoutChanges) {
         appendReview({
           critique: result.critique,
-          markdownPath: result.markdownPath,
+          transcriptPath: result.transcriptPath,
           latestPrompt: result.latestPrompt,
           debugInfo: result.debugInfo,
           completedAt: result.completedAt,
-          turnSignature: turnSignature ?? undefined,
+          turnSignature: result.turnSignature,
           session,
           isFreshCritique: result.isFreshCritique,
         });
-      }
-
-      const versionAfter = await getFileVersion(session.markdownPath);
-      if (versionAfter) {
-        lastProcessedVersionRef.current = versionAfter;
       }
 
       if (debugMode) {
         const debugInfo = [
           'Debug mode active — Codex agent bypassed.',
           `Session ID: ${session.sessionId}`,
-          `SpecStory markdown: ${session.markdownPath}`,
+          `Transcript: ${session.transcriptPath}`,
           result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
         ]
           .filter(Boolean)
@@ -304,12 +288,13 @@ export default function App() {
           setStatusMessages([]);
         }
       }
+
       setIsInitialReview(false);
 
-      await startWatcher(session);
+      await initializeSignalWatcher(session);
+      await drainSignals(session.sessionId);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Initial review failed. Please try again.';
+      const message = err instanceof Error ? err.message : 'Initial review failed. Please try again.';
       setError(message);
       setIsInitialReview(false);
       await resetContinuousState();
@@ -335,9 +320,7 @@ export default function App() {
     }
 
     try {
-      await syncSpecstoryHistory();
-      // File watcher will detect changes and enqueue reviews automatically
-      // Keep the feedback visible for 2 seconds
+      await drainSignals(activeSession.sessionId);
       manualSyncTimeoutRef.current = setTimeout(() => {
         setManualSyncTriggered(false);
       }, 2000);
@@ -423,10 +406,10 @@ export default function App() {
     setCurrentStatusMessage(null);
     setActiveSession(null);
     setIsInitialReview(false);
-    lastProcessedVersionRef.current = null;
     codexThreadRef.current = null;
     lastTurnSignatureRef.current = null;
     reviewCacheRef.current = null;
+    processedSignalsRef.current.clear();
   }
 
   async function cleanupWatcher() {
@@ -519,16 +502,11 @@ export default function App() {
 
     workerRunningRef.current = true;
 
-    while (queueRef.current.length > 0) {
-      if (!activeSession) {
-        break;
-      }
-
+    while (queueRef.current.length > 0 && activeSession) {
       const job = queueRef.current[0];
       setCurrentJob(job);
 
-      const thread = codexThreadRef.current;
-      if (!thread && !debugMode) {
+      if (!codexThreadRef.current && !debugMode) {
         const message = 'No active Codex thread to continue the review.';
         setCurrentStatusMessage(message);
         setStatusMessages((prev) => [...prev, message]);
@@ -539,149 +517,161 @@ export default function App() {
         const result = await performIncrementalReview(
           {
             sessionId: job.sessionId,
-            markdownPath: job.markdownPath,
-            thread,
+            transcriptPath: job.transcriptPath,
+            thread: codexThreadRef.current,
             turns: job.turns,
+            latestTurnSignature: job.latestTurnSignature,
           },
           (message) => setCurrentStatusMessage(message),
         );
 
-        if (activeSession && activeSession.sessionId === job.sessionId) {
-          const latestTurn = job.turns.length ? job.turns[job.turns.length - 1] : null;
-          const turnSignature = latestTurn ? computeTurnSignature(latestTurn) : result.turnSignature ?? null;
-          if (turnSignature) {
-            lastTurnSignatureRef.current = turnSignature;
-          }
-
-          appendReview({
-            critique: result.critique,
-            markdownPath: result.markdownPath,
-            latestPrompt: result.latestPrompt,
-            debugInfo: result.debugInfo,
-            completedAt: result.completedAt,
-            turnSignature: turnSignature ?? undefined,
-            session: activeSession,
-            isFreshCritique: result.isFreshCritique,
-          });
-        } else if (job.turns.length) {
-          const latestTurn = job.turns[job.turns.length - 1];
-          lastTurnSignatureRef.current = computeTurnSignature(latestTurn);
+        if (result.turnSignature) {
+          lastTurnSignatureRef.current = result.turnSignature;
         }
 
-        const version = await getFileVersion(job.markdownPath);
-        if (version) {
-          lastProcessedVersionRef.current = version;
+        appendReview({
+          critique: result.critique,
+          transcriptPath: result.transcriptPath,
+          latestPrompt: result.latestPrompt,
+          debugInfo: result.debugInfo,
+          completedAt: result.completedAt,
+          turnSignature: result.turnSignature,
+          session: activeSession,
+          isFreshCritique: result.isFreshCritique,
+        });
+
+        try {
+          await fs.unlink(job.signalPath);
+        } catch {
+          // ignore unlink errors
         }
 
-        if (debugMode) {
-          const debugInfo = [
-            'Debug mode active — Codex agent bypassed.',
-            `Session ID: ${job.sessionId}`,
-            `SpecStory markdown: ${job.markdownPath}`,
-            result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
-          ]
-            .filter(Boolean)
-            .join(' • ');
-          setCurrentStatusMessage(debugInfo);
-        } else {
-          setCurrentStatusMessage(null);
-        }
+        setCurrentStatusMessage(debugMode
+          ? [
+              'Debug mode active — Codex agent bypassed.',
+              `Session ID: ${job.sessionId}`,
+              `Transcript: ${job.transcriptPath}`,
+              result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
+            ]
+              .filter(Boolean)
+              .join(' • ')
+          : null);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
         setCurrentStatusMessage(`Review failed: ${message}`);
         setStatusMessages((prev) => [...prev, `Review failed for "${job.promptPreview}": ${message}`]);
-        // Don't break - continue to next item in queue
       }
 
-      // Always remove the job from queue whether it succeeded or failed
       queueRef.current = queueRef.current.slice(1);
       setQueue(queueRef.current);
       setCurrentJob(null);
+      processedSignalsRef.current.delete(job.signalPath);
     }
 
     workerRunningRef.current = false;
-    setCurrentJob(null);
   }
 
-  async function startWatcher(session: SpecstorySessionSummary) {
+  async function initializeSignalWatcher(session: ActiveSession) {
     await cleanupWatcher();
 
-    const watcher = chokidar.watch(session.markdownPath, {
-      ignoreInitial: true,
+    const needsReviewDir = path.join(process.cwd(), '.sage', 'runtime', 'needs-review');
+    const watcher = chokidar.watch(needsReviewDir, { ignoreInitial: true, depth: 0 });
+
+    watcher.on('add', (filePath) => {
+      if (!processedSignalsRef.current.has(filePath)) {
+        processedSignalsRef.current.add(filePath);
+        void processSignalFile(filePath, session.sessionId);
+      }
     });
 
-    const handleChange = async () => {
-      const version = await getFileVersion(session.markdownPath);
-      if (!version || version === lastProcessedVersionRef.current) {
-        return;
-      }
-
-      lastProcessedVersionRef.current = version;
-
-      try {
-        const markdown = await fs.readFile(session.markdownPath, 'utf8');
-        const allTurns = extractTurns(markdown);
-        const newTurns = collectNewTurns(allTurns, latestKnownSignature());
-        if (!newTurns.length) {
-          return;
-        }
-
-        const promptPreview = getPromptPreview(newTurns[0].user);
-
-        enqueueJob({
-          sessionId: session.sessionId,
-          markdownPath: session.markdownPath,
-          turns: newTurns,
-          promptPreview,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to read updated markdown.';
-        setCurrentStatusMessage(message);
-        setStatusMessages((prev) => [...prev, message]);
-      }
-    };
-
-    watcher.on('change', handleChange);
     watcherRef.current = watcher;
   }
 
-  async function getFileVersion(filePath: string): Promise<string | null> {
+  async function drainSignals(sessionId: string) {
+    const needsReviewDir = path.join(process.cwd(), '.sage', 'runtime', 'needs-review');
+    let files: string[] = [];
     try {
-      const stats = await fs.stat(filePath);
-      return stats.mtimeMs.toString();
+      files = await fs.readdir(needsReviewDir);
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') return;
+      throw error;
+    }
+
+    for (const file of files) {
+      const fullPath = path.join(needsReviewDir, file);
+      if (processedSignalsRef.current.has(fullPath)) continue;
+      processedSignalsRef.current.add(fullPath);
+      await processSignalFile(fullPath, sessionId);
+    }
+  }
+
+  async function processSignalFile(filePath: string, activeSessionId: string) {
+    let enqueued = false;
+    try {
+      const signal = await readSignalFile(filePath);
+      if (!signal) {
+        processedSignalsRef.current.delete(filePath);
+        return;
+      }
+
+      if (!activeSession || signal.sessionId !== activeSessionId) {
+        processedSignalsRef.current.delete(filePath);
+        return;
+      }
+
+      const sinceSignature = latestKnownSignature();
+      const { turns, latestTurnUuid } = await extractTurns({
+        transcriptPath: signal.transcriptPath,
+        sinceUuid: sinceSignature ?? null,
+      });
+
+      if (!turns.length) {
+        await fs.unlink(filePath).catch(() => undefined);
+        processedSignalsRef.current.delete(filePath);
+        return;
+      }
+
+      const promptPreview = getPromptPreview(turns[0].user);
+      enqueueJob({
+        sessionId: signal.sessionId,
+        transcriptPath: signal.transcriptPath,
+        turns,
+        promptPreview,
+        latestTurnSignature: latestTurnUuid,
+        signalPath: filePath,
+      });
+      enqueued = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to process review signal.';
+      setStatusMessages((prev) => [...prev, message]);
+    } finally {
+      if (!enqueued) {
+        processedSignalsRef.current.delete(filePath);
+      }
+    }
+  }
+
+  async function readSignalFile(filePath: string): Promise<{ sessionId: string; transcriptPath: string; queuedAt: number } | null> {
+    try {
+      const raw = await fs.readFile(filePath, 'utf8');
+      const parsed = JSON.parse(raw) as { sessionId?: string; transcriptPath?: string; queuedAt?: number };
+      if (!parsed.sessionId || !parsed.transcriptPath) {
+        return null;
+      }
+      return {
+        sessionId: parsed.sessionId,
+        transcriptPath: parsed.transcriptPath,
+        queuedAt: parsed.queuedAt ?? Date.now(),
+      };
     } catch {
       return null;
     }
   }
 
-  function computeTurnSignature(turn: TurnSummary): string {
-    return createHash('sha256')
-      .update(turn.user)
-      .update('\n')
-      .update(turn.agent ?? '')
-      .digest('hex');
-  }
-
-  function collectNewTurns(allTurns: TurnSummary[], lastSignature: string | null): TurnSummary[] {
-    if (!allTurns.length) return [];
-    if (!lastSignature) return allTurns;
-
-    for (let index = allTurns.length - 1; index >= 0; index -= 1) {
-      if (computeTurnSignature(allTurns[index]) === lastSignature) {
-        return allTurns.slice(index + 1);
-      }
-    }
-
-    return allTurns;
-  }
-
   function latestKnownSignature(): string | null {
     if (queueRef.current.length) {
       const lastJob = queueRef.current[queueRef.current.length - 1];
-      const turns = lastJob.turns;
-      if (turns.length) {
-        return computeTurnSignature(turns[turns.length - 1]);
-      }
+      if (lastJob.latestTurnSignature) return lastJob.latestTurnSignature;
     }
     return lastTurnSignatureRef.current;
   }
@@ -705,34 +695,17 @@ export default function App() {
     setStatusMessages([]);
     await resetContinuousState();
     try {
-      await ensureStopHookConfigured();
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? `Failed to configure Claude hook: ${err.message}`
-          : 'Failed to configure Claude hook. Try again.';
-      setError(message);
-      setScreen('error');
-      return;
-    }
-
-    try {
-      await syncSpecstoryHistory();
-      const fetched = await listSpecstorySessions();
-      const filtered = fetched.filter((session) => !session.isWarmup);
-      setSessions(filtered);
-      if (filtered.length) {
+      const fetched = await listActiveSessions();
+      setSessions(fetched);
+      if (fetched.length) {
         setSelectedIndex(0);
         setScreen('session-list');
       } else {
-        setError('No non-warmup Claude Code sessions found for this repository.');
+        setError('No active Claude Code sessions found for this repository.');
         setScreen('error');
       }
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to sync SpecStory sessions. Try again.';
+      const message = err instanceof Error ? err.message : 'Failed to load sessions. Try again.';
       setError(message);
       setScreen('error');
     }
@@ -767,7 +740,7 @@ export default function App() {
           <Box flexDirection="column" marginTop={1}>
             {sessions.map((session, index) => (
               <SessionRow
-                key={`${session.sessionId}-${session.timestamp ?? index}`}
+                key={`${session.sessionId}-${session.lastUpdated ?? index}`}
                 session={session}
                 index={index}
                 isSelected={index === selectedIndex}
@@ -904,13 +877,13 @@ export default function App() {
 }
 
 interface SessionRowProps {
-  session: SpecstorySessionSummary;
+  session: ActiveSession;
   index: number;
   isSelected: boolean;
 }
 
 function SessionRow({ session, index, isSelected }: SessionRowProps) {
-  const timestamp = session.timestamp ? formatRelativeTime(session.timestamp) : 'Unknown time';
+  const timestamp = formatRelativeTime(session.lastUpdated);
   const prompt = session.title ? truncate(session.title, 60) : '(no prompt recorded)';
 
   return (
@@ -927,10 +900,10 @@ function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength - 1).trimEnd() + '…';
 }
 
-function toCompletedReview(stored: StoredReview, session: SpecstorySessionSummary): CompletedReview {
+function toCompletedReview(stored: StoredReview, session: ActiveSession): CompletedReview {
   return {
     critique: stored.critique,
-    markdownPath: session.markdownPath,
+    transcriptPath: session.transcriptPath,
     latestPrompt: stored.latestPrompt ?? undefined,
     debugInfo:
       stored.artifactPath && stored.promptText
@@ -943,11 +916,10 @@ function toCompletedReview(stored: StoredReview, session: SpecstorySessionSummar
   };
 }
 
-function formatRelativeTime(isoTimestamp: string): string {
-  const timestamp = new Date(isoTimestamp);
-  if (Number.isNaN(timestamp.getTime())) return 'Unknown time';
+function formatRelativeTime(timestampMs: number): string {
+  if (!Number.isFinite(timestampMs)) return 'Unknown time';
 
-  const diff = Date.now() - timestamp.getTime();
+  const diff = Date.now() - timestampMs;
   const seconds = Math.round(diff / 1000);
   if (seconds < 60) return `${seconds}s ago`;
 
@@ -960,7 +932,7 @@ function formatRelativeTime(isoTimestamp: string): string {
   const days = Math.round(hours / 24);
   if (days < 7) return `${days}d ago`;
 
-  return timestamp.toLocaleString();
+  return new Date(timestampMs).toLocaleString();
 }
 
 function getProjectName(cwdPath: string): string {

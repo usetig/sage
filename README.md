@@ -27,15 +27,10 @@ Coding agents like Claude Code can sound confident while being wrong or incomple
 
 Before installing Sage, ensure you have:
 
-1. **Node.js 18+** - [Download here](https://nodejs.org/)
-2. **SpecStory CLI** - [Installation guide](https://docs.specstory.com)
-   ```bash
-   # Verify SpecStory is installed and on PATH
-   which specstory
-   ```
-3. **OpenAI Codex SDK credentials** - Configured on your system
-4. **Claude Code** - With at least one session in your repository
-5. **Git repository** - Sage must run in a Git-tracked directory
+1. **Node.js 18+** — [Download here](https://nodejs.org/)
+2. **OpenAI Codex SDK credentials** — Configured on your system
+3. **Claude Code** — With at least one session in your repository
+4. **Git repository** — Sage must run in a Git-tracked directory
 
 ## Installation
 
@@ -62,7 +57,12 @@ Before installing Sage, ensure you have:
    cd /path/to/your/project
    ```
 
-2. **Start Sage**:
+2. **Configure Claude hooks (run once per project):**
+   ```bash
+   npm run configure-hooks
+   ```
+
+3. **Start Sage**:
    ```bash
    npm start
    ```
@@ -71,25 +71,24 @@ Before installing Sage, ensure you have:
    npm run dev
    ```
 
-3. **Select a Claude session** from the interactive picker using arrow keys and Enter
+4. **Select a Claude session** from the interactive picker using arrow keys and Enter
 
-4. **Continue working with Claude Code** - Sage will automatically review new turns as they arrive
+5. **Continue working with Claude Code** - Sage will automatically review new turns as they arrive
 
 ## How It Works
 
 ### First Run Setup
 On launch, Sage automatically:
-1. Runs `specstory sync claude` to export Claude Code sessions to `.sage/history/`
-2. Installs a Claude Code `Stop` hook in `.claude/settings.local.json` to auto-sync after each Claude response
+1. Ensures runtime directories exist under `.sage/runtime/`
+2. Reads active session metadata captured by the Claude hooks
 3. Displays an interactive session picker
 
 ### Continuous Review Mode
 After selecting a session:
-1. **Initial Review** - Sage reads the full conversation, explores relevant code files, and delivers a comprehensive critique of the latest turn
-2. **File Watching** - Monitors `.sage/history/{sessionId}.md` for changes
-3. **Auto-sync** - The Claude Stop hook triggers SpecStory sync after each Claude response
-4. **Queue Processing** - New turns are detected, queued (FIFO), and reviewed incrementally
-5. **Critique Cards** - Structured feedback appears in the terminal as reviews complete
+1. **Initial Review** – Sage loads the transcript directly from Claude’s JSONL log and critiques the most recent turn
+2. **Hook Signals** – Claude’s hooks write per-session “needs-review” signals; Sage watches these files for new work
+3. **Queue Processing** – New turns are detected, queued (FIFO), and reviewed incrementally
+4. **Critique Cards** – Structured feedback appears in the terminal as reviews complete
 
 ### Critique Card Structure
 Each review includes:
@@ -107,7 +106,7 @@ Each review includes:
 - `Ctrl+C` - Exit
 
 ### Continuous Review Mode
-- `M` - Manual SpecStory sync (force refresh)
+- `M` - Manually rescan hook signals (force review)
 - `B` - Back to session picker
 - `Ctrl+C` - Exit
 
@@ -134,38 +133,33 @@ sage/
 │   ├── types.ts               # TypeScript interfaces
 │   ├── lib/                   # Core business logic
 │   │   ├── codex.ts          # Codex SDK wrapper & prompts
-│   │   ├── specstory.ts      # SpecStory integration
+│   │   ├── jsonl.ts          # Claude JSONL parsing utilities
 │   │   ├── review.ts         # Review orchestration
-│   │   ├── markdown.ts       # Conversation parsing
-│   │   ├── hooks.ts          # Claude hook configuration
 │   │   └── debug.ts          # Debug mode utilities
-│   └── ui/                    # Terminal UI components
+│   ├── hooks/                # Claude hook shim (invoked by Claude Code)
+│   │   └── sageHook.ts
+│   └── scripts/              # Developer utilities (hook installer)
+│       └── configureHooks.ts
 │       ├── App.tsx           # Main TUI orchestrator
 │       └── CritiqueCard.tsx  # Critique renderer
-├── .sage/                     # SpecStory exports (generated)
+├── .sage/                     # Runtime state (sessions, reviews)
 ├── .debug/                    # Debug artifacts (when SAGE_DEBUG=1)
 └── documentation/             # Reference docs
 ```
 
 ## Troubleshooting
 
-### "SpecStory not found"
-Ensure SpecStory CLI is installed and on your PATH:
-```bash
-which specstory
-```
-
 ### No sessions appear in picker
 - Verify you've used Claude Code in this repository before
-- Check that `.sage/history/` contains markdown files
-- Try pressing `R` to refresh the session list
-- Run manual sync: `specstory sync claude --output-dir .sage/history`
+- Run `npm run configure-hooks` to ensure Claude hooks are installed
+- Check that `.sage/runtime/sessions/` contains metadata files
+- Press `R` to refresh the session list in Sage
 
 ### Reviews aren't triggering automatically
-- Check that `.claude/settings.local.json` contains the Stop hook
-- Restart Sage to reconfigure hooks: `npm start`
-- Try manual sync with `M` key in continuous mode
-- Verify the Claude session file exists in `.sage/history/`
+- Confirm `.claude/settings.local.json` contains Sage’s hook command
+- Inspect `.sage/runtime/needs-review/` for pending signal files
+- Use the `M` key to rescan signals manually
+- Check `.sage/runtime/hook-errors.log` for hook execution errors
 
 ### Codex connection errors
 - Verify your Codex SDK credentials are configured

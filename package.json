@@ -9,7 +9,8 @@
   "scripts": {
     "start": "tsx src/index.tsx",
     "build": "tsc",
-    "dev": "tsx watch src/index.tsx"
+    "dev": "tsx watch src/index.tsx",
+    "configure-hooks": "tsx src/scripts/configureHooks.ts"
   },
   "repository": {
     "type": "git",
