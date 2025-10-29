@@ -54,6 +54,7 @@ async function removeFileIfExists(filePath: string): Promise<void> {
 
 async function appendError(message: string): Promise<void> {
   try {
+    ensureRuntimeDirs();
     await fs.promises.appendFile(ERROR_LOG, `${new Date().toISOString()} ${message}\n`, 'utf8');
   } catch {
     // best effort
@@ -70,19 +71,28 @@ async function handlePayload(raw: string): Promise<void> {
   }
 
   const { session_id: sessionId, transcript_path: transcriptPath, cwd, hook_event_name: eventName } = payload;
-  if (!sessionId || !eventName || !transcriptPath || !cwd) {
+  ensureRuntimeDirs();
+
+  if (!sessionId || !eventName || !transcriptPath) {
     await appendError(`Missing required hook fields: ${JSON.stringify(payload)}`);
     return;
   }
 
-  ensureRuntimeDirs();
-
   const sessionFile = path.join(SESSIONS_DIR, `${sessionId}.json`);
-  const signalFile = path.join(QUEUE_DIR, sessionId);
-
   if (eventName === 'SessionEnd') {
     await removeFileIfExists(sessionFile);
-    await removeFileIfExists(signalFile);
+  try {
+    const entries = await fs.promises.readdir(QUEUE_DIR);
+    await Promise.all(
+      entries
+        .filter((entry) => entry.startsWith(`${sessionId}-`) || entry === sessionId)
+        .map((entry) => removeFileIfExists(path.join(QUEUE_DIR, entry))),
+    );
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') {
+      await appendError(`Failed to clean signals for ${sessionId}: ${error.message ?? error}`);
+    }
+  }
     return;
   }
 
@@ -96,9 +106,14 @@ async function handlePayload(raw: string): Promise<void> {
     }
   }
 
+  const cleanedCwd = typeof cwd === 'string' && cwd.trim().length > 0 ? cwd : undefined;
+  const effectiveCwd = cleanedCwd ?? (typeof metadata.cwd === 'string' ? metadata.cwd : undefined);
+
   metadata.sessionId = sessionId;
   metadata.transcriptPath = transcriptPath;
-  metadata.cwd = cwd;
+  if (effectiveCwd) {
+    metadata.cwd = effectiveCwd;
+  }
   metadata.lastUpdated = Date.now();
 
   if (eventName === 'UserPromptSubmit' && typeof payload.prompt === 'string') {
@@ -107,6 +122,10 @@ async function handlePayload(raw: string): Promise<void> {
 
   if (eventName === 'Stop') {
     metadata.lastStopTime = Date.now();
+  }
+
+  if (!metadata.cwd) {
+    await appendError(`No cwd available for session ${sessionId} during ${eventName}; proceeding without updating cwd.`);
   }
 
   try {
@@ -122,7 +141,9 @@ async function handlePayload(raw: string): Promise<void> {
       queuedAt: Date.now(),
     };
     try {
-      await writeFileAtomic(signalFile, `${JSON.stringify(signal)}\n`);
+      const fileName = `${sessionId}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`;
+      const uniqueSignalPath = path.join(QUEUE_DIR, fileName);
+      await writeFileAtomic(uniqueSignalPath, `${JSON.stringify(signal)}\n`);
     } catch (error: any) {
       await appendError(`Failed to write review signal: ${error.message ?? error}`);
     }

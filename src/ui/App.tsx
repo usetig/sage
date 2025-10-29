@@ -82,6 +82,7 @@ export default function App() {
   const resumeStatusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reviewCacheRef = useRef<SessionReviewCache | null>(null);
   const processedSignalsRef = useRef<Set<string>>(new Set());
+  const activeSessionRef = useRef<ActiveSession | null>(null);
 
   useEffect(() => {
     void reloadSessions();
@@ -212,6 +213,7 @@ export default function App() {
     }
     setCurrentStatusMessage('loading session context...');
 
+    activeSessionRef.current = session;
     setActiveSession(session);
     setScreen('running');
     setIsInitialReview(true);
@@ -405,6 +407,7 @@ export default function App() {
     setStatusMessages([]);
     setCurrentStatusMessage(null);
     setActiveSession(null);
+    activeSessionRef.current = null;
     setIsInitialReview(false);
     codexThreadRef.current = null;
     lastTurnSignatureRef.current = null;
@@ -536,7 +539,7 @@ export default function App() {
           debugInfo: result.debugInfo,
           completedAt: result.completedAt,
           turnSignature: result.turnSignature,
-          session: activeSession,
+          session: activeSessionRef.current ?? activeSession,
           isFreshCritique: result.isFreshCritique,
         });
 
@@ -576,7 +579,6 @@ export default function App() {
 
     const needsReviewDir = path.join(process.cwd(), '.sage', 'runtime', 'needs-review');
     const watcher = chokidar.watch(needsReviewDir, { ignoreInitial: true, depth: 0 });
-
     watcher.on('add', (filePath) => {
       if (!processedSignalsRef.current.has(filePath)) {
         processedSignalsRef.current.add(filePath);
@@ -614,7 +616,8 @@ export default function App() {
         return;
       }
 
-      if (!activeSession || signal.sessionId !== activeSessionId) {
+      const currentSession = activeSessionRef.current;
+      if (!currentSession || currentSession.sessionId !== signal.sessionId) {
         processedSignalsRef.current.delete(filePath);
         return;
       }
