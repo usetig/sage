@@ -150,7 +150,8 @@ This document gives any coding agent the context it needs to contribute safely a
 
 ## 8. Known Limitations & TODOs
 
-- **Resume chains:** Sage doesn't yet hop from a resumed session ID back to the parent export. Warmup-only exports during resumes still require manual selection of the original session.
+- **Resume chains:** Sage doesn't yet hop from a resumed session ID back to the parent export. Warmup-only exports during resumes still require manual selection of the original session. (Note: This is about **Claude session resumption** creating new session IDs, not Sage thread persistence—see below.)
+- **Thread persistence:** ✅ Sage now saves Codex thread metadata to `.sage/threads/` and automatically resumes threads when re-selecting sessions. The `isFreshCritique` flag prevents duplicate critiques when resuming unchanged threads. This enables context preservation across Sage restarts and faster incremental reviews. See `documentation/thread-persistence.md` for details.
 - **Critique history navigation:** Reviews stack vertically for scrollback but no arrow-key navigation within the UI. Users scroll their terminal to see previous reviews.
 - **Read-only enforcement:** Codex threads currently rely on context instructions; explicit permission settings (if supported by the SDK) would enhance safety.
 - **Comprehensive logging:** Minimal debug output goes to the console; consider writing a log file for diagnosing SpecStory or Codex failures.

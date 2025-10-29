@@ -18,6 +18,7 @@ Coding agents like Claude Code can sound confident while being wrong or incomple
 - **Zero-command workflow** - Automatically reviews Claude responses as you work
 - **Repository-aware** - Reads your codebase to provide informed critiques
 - **Structured feedback** - Delivers verdict, reasoning, alternatives, and questions
+- **Thread persistence** - Automatically resumes context when re-selecting sessions
 - **FIFO queue** - Handles multiple turns gracefully, reviews in order
 - **Interactive TUI** - Session picker and real-time critique display
 - **Read-only by design** - Never modifies your code
@@ -198,6 +199,8 @@ This runs after every Claude response to keep `.sage/history/` in sync.
 
 ### Directory Structure
 - `.sage/history/` - SpecStory markdown exports (auto-generated)
+- `.sage/threads/` - Codex thread metadata for resumption (auto-generated)
+- `.sage/reviews/` - Cached critique history (auto-generated)
 - `.debug/` - Debug artifacts when `SAGE_DEBUG=1` (auto-generated)
 - `.claude/settings.local.json` - Claude Code hooks (auto-configured)
 

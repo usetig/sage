@@ -239,7 +239,7 @@ export async function performIncrementalReview(
     throw new Error('No active Codex thread to continue the review.');
   }
 
-  onProgress?.('formulating response...');
+  onProgress?.('Sage is thinking...');
 
   // Add timeout to prevent infinite hangs
   const timeoutPromise = new Promise<never>((_, reject) => {

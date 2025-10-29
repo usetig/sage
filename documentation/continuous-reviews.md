@@ -65,7 +65,7 @@ This document describes how Sage keeps up with an active Claude Code session onc
 
 ---
 
-## Codex Threads
+## Codex Threads & Persistence
 
 - **Initial review** — `runInitialReview()` starts a fresh thread (via `Codex.startThread()`) and issues a comprehensive prompt including the full conversation transcript.
 - **Follow-up reviews** — `runFollowupReview()` sends only the new turn(s) to the existing thread. The prompt:
@@ -73,6 +73,7 @@ This document describes how Sage keeps up with an active Claude Code session onc
   - Supplies each new turn in order.
   - Requests a critique card without repeating the repo reconnaissance instructions.
 - **Thread lifetime** — the thread reference lives in `codexThreadRef`; it is cleared when the user exits continuous mode or selects a new session.
+- **Thread persistence** — Sage now saves thread metadata to `.sage/threads/{sessionId}.json` including the Codex thread ID and turn count. When re-selecting a session, Sage automatically resumes the existing thread (preserving codebase context) and only reviews new turns. See `documentation/thread-persistence.md` for details on resumption scenarios and the `isFreshCritique` flag.
 - **Error handling** — if the thread is missing (e.g., after a crash) when a job arrives, Sage logs a status message and leaves the job in the queue so the user can restart the session cleanly.
 
 ---
@@ -103,6 +104,31 @@ This document describes how Sage keeps up with an active Claude Code session onc
   - Because we walk backwards using signatures, multiple turns accumulated while Sage was offline are processed in order on the next change event.
 - **Switching Sessions**
   - `resetContinuousState()` clears the watcher, queue, signatures, and thread references to avoid cross-session contamination.
+
+---
+
+## Status Message Flow
+
+During reviews, Sage displays progress messages to indicate the current stage. The progression varies based on whether Sage is resuming an existing thread or creating a new one.
+
+| Stage | Status Message | When |
+|-------|---------------|------|
+| **Thread Management** |
+| Thread Loading | `loading previous context...` | Resuming existing Codex thread from `.sage/threads/` |
+| Thread Creation | `initializing review agent...` | Creating new Codex thread (first time reviewing session) |
+| Thread Resume (No Changes) | `Resuming Sage thread...` | Thread exists, conversation unchanged since last review |
+| Session Setup | `loading session context...` | Initial session selection and markdown parsing |
+| **Review Stages** |
+| Initial Review - Reading | `reading conversation history...` | Parsing markdown export for all turns |
+| Initial Review - Analysis | `analyzing codebase context...` | First-time review with full conversation context |
+| Incremental Review - Parsing | `examining new dialogue...` | Thread exists, processing new turns only |
+| Incremental Review - Active | `reviewing changes...` | Actively reviewing new turn content |
+| Awaiting Response | `formulating response...` | Waiting for Codex to complete analysis |
+
+**Special Status Displays:**
+- When resuming without changes: Shows `Session previously reviewed. Using existing critiques.` after the brief `Resuming Sage thread...` message
+- In debug mode: Shows `Debug mode active — Codex agent bypassed` with artifact path
+- Manual sync: Shows `running manual sync...` briefly when user presses `M`
 
 ---
 
