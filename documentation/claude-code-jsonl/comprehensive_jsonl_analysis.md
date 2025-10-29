@@ -5,16 +5,16 @@
 This document provides a deep dive into Claude Code's native JSONL conversation log format based on:
 - Actual log file analysis from `~/.claude/projects/`
 - Existing documentation in the Sage repository
-- Current Sage codebase examination (SpecStory markdown parsing)
+- Current Sage codebase examination (legacy SpecStory path + current JSONL implementation)
 - Real-world examples from 160+ session files
 
-**Key Finding:** Sage can potentially eliminate its dependency on SpecStory by parsing JSONL logs directly, gaining:
+**Key Shift:** Sage now ingests sessions directly from Claude’s JSONL logs (the SpecStory path has been removed), gaining:
 - Real-time access without external CLI tool
 - Optional access to sidechain/agent data (stored in separate `agent-*.jsonl` files as of 2.0.24+)
 - Simpler architecture (no markdown parsing)
 - Direct tool call visibility
 
-**Important:** As of Claude Code 2.0.24+, agent/sidechain work is stored in separate files named `agent-<agentId>.jsonl`. **This document focuses on the modern format only.** Legacy sessions (pre-2.0.24) are not supported.
+**Important:** As of Claude Code 2.0.24+, agent/sidechain work is stored in separate files named `agent-<agentId>.jsonl`. **This document focuses on the modern format only.** Legacy sessions (pre-2.0.24) are not supported. Sections referencing SpecStory are retained for historical comparison.
 
 ---
 
@@ -725,7 +725,7 @@ function extractTurnsWithTools(events: ClaudeEvent[]): Turn[] {
 
 ## 9. Comparison: SpecStory Markdown vs Direct JSONL
 
-### 9.1 SpecStory Markdown Approach (Current)
+### 9.1 SpecStory Markdown Approach (Legacy)
 
 **Workflow:**
 ```
@@ -776,7 +776,7 @@ Warmup
 - Sidechain filtering happens in SpecStory (opaque)
 - Markdown parsing is fragile (regex-based, sensitive to format changes)
 
-### 9.2 Direct JSONL Approach (Proposed)
+### 9.2 Direct JSONL Approach (Current)
 
 **Workflow:**
 ```
@@ -794,10 +794,10 @@ Warmup
 - **Access to metadata** - session ID, timestamps, versions, git branch
 
 **Cons:**
-- Need to implement warmup detection
-- Need to handle resume chaining (or skip warmup-only sessions)
-- More complex session discovery (multiple dirs, multiple projects)
-- Need to filter empty files (0 bytes)
+- Requires warmup detection (handled via `isWarmupSession()` in `src/lib/jsonl.ts`)
+- Resume dedupe depends on cached assistant UUIDs; tooling must skip cloned history emitted during resumes
+- Session discovery spans multiple project directories; Sage relies on hook-written metadata to scope results
+- Empty or truncated transcripts still need to be filtered out before reviews run
 
 ### 9.3 Side-by-Side Feature Comparison
 
@@ -821,6 +821,8 @@ Warmup
 ---
 
 ## 10. Migration Path: SpecStory → Direct JSONL
+
+> **Historical reference:** The steps below were executed in October 2025. They remain here to explain how the team transitioned from SpecStory to the current hook/JSONL architecture.
 
 ### 10.1 Minimal Viable Change (MVP)
 

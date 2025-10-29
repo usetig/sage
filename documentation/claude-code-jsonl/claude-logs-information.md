@@ -58,7 +58,7 @@ Hook payloads surface transcript metadata so scripts can connect events back to 
 - `permission_mode` reveals whether Claude is in the default, plan, accept-edits, or bypass mode.
 - Event-specific fields depend on the hook (`tool_input`, `tool_response`, `prompt`, `message`, `stop_hook_active`, etc.).
 
-The `Stop` hook is particularly useful for automation: run `specstory sync` or similar using the provided `transcript_path` whenever Claude finishes a turn.
+The `Stop` hook is particularly useful for automation: Sage writes a lightweight "needs review" signal file using the provided `session_id` and `transcript_path` whenever Claude finishes a turn, letting the TUI queue critiques without re-exporting the transcript.
 
 ## Practical Parsing Tips
 - Treat every line as standalone JSON; never assume schemas are stable. Use `jq` (or similar) to filter `type` and `sessionId`.
@@ -72,7 +72,7 @@ The `Stop` hook is particularly useful for automation: run `specstory sync` or s
 ## Known Quirks
 - Summaries may lag when resuming; the resume UI reuses the previous title until a new summary is emitted.
 - Some releases emit additional contextual fields (`requestId`, `version`, permission data). Ignore unknown properties rather than failing.
-- Sidechain tool calls are often hidden from SpecStory exports but still recorded in the JSONL; filters like `tool`/`tool_result` remain valuable for deeper auditing.
+- Sidechain tool calls are often hidden from legacy SpecStory exports but remain fully recorded in the JSONL; filters like `tool`/`tool_result` are useful for deeper auditing.
 - Cache accounting fields (`cache_creation_input_tokens`, `cache_read_input_tokens`, etc.) fluctuate per response and can be useful if you need to detect prompt caching activity.
 
 Keep this document updated as Anthropic evolves the log schema or introduces a canonical conversation identifier.
