@@ -181,6 +181,7 @@ git init
 ## Known Limitations
 
 - **Single-instance assumption** — Running multiple Sage processes against the same repository can race on `.sage/history/`, `.sage/threads/`, or the new review cache. Keep one instance active per repo to avoid desynchronised queues or duplicate critiques.
+- **Incomplete responses on manual selection** — If you select a session while Claude is still typing, the initial review may fail or produce inaccurate critique. Wait for Claude to finish its response before selecting the session. Continuous mode is unaffected and works correctly.
 
 ## Configuration
 
