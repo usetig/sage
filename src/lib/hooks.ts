@@ -5,7 +5,7 @@ const CLAUDE_DIR = '.claude';
 const SETTINGS_FILE = 'settings.local.json';
 
 const HOOK_COMMAND =
-  'specstory sync claude --output-dir "$CLAUDE_PROJECT_DIR/.sage/history" --no-version-check --silen --no-cloud-sync';
+  'specstory sync claude --output-dir "$CLAUDE_PROJECT_DIR/.sage/history" --no-version-check --silent --no-cloud-sync --no-usage-analytics';
 
 export async function ensureStopHookConfigured(): Promise<void> {
   const settingsDir = path.join(process.cwd(), CLAUDE_DIR);
