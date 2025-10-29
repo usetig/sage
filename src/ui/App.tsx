@@ -804,13 +804,25 @@ export default function App() {
 
           <Box marginTop={1} flexDirection="column">
             {(() => {
-              const { status, keybindings, isReviewing, statusMessage } = formatStatus(currentJob, queue.length, isInitialReview, manualSyncTriggered);
+              const { status, keybindings, isReviewing, statusMessage, queuedItems } = formatStatus(currentJob, queue, isInitialReview, manualSyncTriggered);
+
+              const queueDisplay = queuedItems.length > 0 && (
+                <Box marginTop={1} flexDirection="column">
+                  <Text dimColor>Queue:</Text>
+                  {queuedItems.map((item, index) => (
+                    <Text key={`${item.sessionId}-${index}`} dimColor>
+                      {`  ${index + 1}. "${item.promptPreview}"${item.turns.length > 1 ? ` (${item.turns.length} turns)` : ''}`}
+                    </Text>
+                  ))}
+                </Box>
+              );
 
               if (currentStatusMessage) {
                 return (
                   <>
                     <Spinner message={currentStatusMessage} />
                     <Text dimColor>{keybindings}</Text>
+                    {queueDisplay}
                   </>
                 );
               }
@@ -820,6 +832,7 @@ export default function App() {
                   <>
                     <Spinner message={statusMessage} />
                     <Text dimColor>{keybindings}</Text>
+                    {queueDisplay}
                   </>
                 );
               }
@@ -828,6 +841,7 @@ export default function App() {
                 <>
                   <Text dimColor>{status}</Text>
                   <Text dimColor>{keybindings}</Text>
+                  {queueDisplay}
                 </>
               );
             })()}
@@ -955,13 +969,14 @@ function getProjectName(cwdPath: string): string {
 
 function formatStatus(
   currentJob: ReviewQueueItem | null,
-  queueLength: number,
+  queue: ReviewQueueItem[],
   isInitialReview: boolean,
   manualSyncTriggered: boolean,
-): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string } {
+): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string; queuedItems: ReviewQueueItem[] } {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
   const toggleWhyLabel = 'W to toggle WHY';
-  const pendingCount = currentJob ? Math.max(queueLength - 1, 0) : Math.max(queueLength, 0);
+  const queuedItems = currentJob ? queue.slice(1) : queue;
+  const pendingCount = queuedItems.length;
 
   if (isInitialReview) {
     return {
@@ -969,6 +984,7 @@ function formatStatus(
       statusMessage: 'running initial review...',
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
+      queuedItems,
     };
   }
 
@@ -983,6 +999,7 @@ function formatStatus(
       statusMessage: `reviewing "${currentJob.promptPreview}"${queueSuffix}`,
       keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
+      queuedItems,
     };
   }
 
@@ -990,5 +1007,6 @@ function formatStatus(
     status: 'Status: ⏺ Waiting for Claude response',
     keybindings: `C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`,
     isReviewing: false,
+    queuedItems,
   };
 }
