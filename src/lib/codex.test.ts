@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildFollowupPromptPayload, buildInitialPromptPayload } from './codex.js';
-import type { TurnSummary } from './markdown.js';
+import type { TurnSummary } from './jsonl.js';
 
 const SAMPLE_TURNS: TurnSummary[] = [
   {

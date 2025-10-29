@@ -1,6 +1,6 @@
 # Review Cache Persistence
 
-Sage now keeps a lightweight, read-only record of every critique so reopening the TUI restores the history instantly. This document explains what is stored, where it lives, and how it stays in sync with Claude Code exports.
+Sage keeps a lightweight, read-only record of every critique so reopening the TUI restores the history instantly. This document explains what is stored, where it lives, and how it stays aligned with the JSONL transcripts emitted by Claude Code.
 
 ## Storage layout
 
@@ -39,7 +39,7 @@ The `turnSignature` is the SHA-256 hash of the user + agent content that Sage al
    - If the cache contains a `lastTurnSignature`, Sage treats it as the baseline for incremental reviews.
 2. **Initial review**
    - After the Codex run completes, `appendReview` persists the new critique to disk via `appendReviewToCache`.
-   - If the newly exported conversation no longer contains the cached signature (e.g., SpecStory rolled back), Sage deletes the cache and clears the UI so the user doesn’t see stale cards.
+   - If the transcript no longer contains the cached assistant UUID (e.g., the JSONL was truncated or the session restarted with entirely new content), Sage deletes the cache and clears the UI so the user doesn’t see stale cards.
 3. **Incremental reviews**
    - Each completed review is appended and written atomically (`.tmp` + rename) so crashes never leave partial files.
 4. **Reset**
@@ -49,7 +49,7 @@ The `turnSignature` is the SHA-256 hash of the user + agent content that Sage al
 
 - Loads: invalid JSON is logged and ignored—Sage simply starts fresh.
 - Saves: failures surface a dim status message but never block the UI.
-- Deletion: `deleteReviewCache` is invoked when Sage detects the cached signature no longer exists in SpecStory exports.
+- Deletion: `deleteReviewCache` is invoked when Sage detects the cached assistant UUID no longer exists in the latest transcript.
 
 ## Limits
 

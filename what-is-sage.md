@@ -27,13 +27,12 @@ Coding agents (Claude Code) can sound confident while being wrong or incomplete.
 
 ## v0 CLI status
 
-- `sage` launches a TUI that lists Claude Code sessions discovered under `~/.claude/projects/**`. Use the arrow keys to pick one for review.
-- On launch, Sage runs `specstory sync claude --output-dir .sage/history --no-version-check --silent` to refresh markdown exports; the picker reads directly from `.sage/history` and reuses those files when reviewing.
-- Sage automatically writes a Claude `Stop` hook to `.claude/settings.local.json` so every Claude response re-runs the SpecStory sync without manual setup.
-- **Continuous mode is now active:** After selecting a session, Sage performs an initial review and then watches the markdown file in `.sage/history` for changes. When new turns are detected, they're enqueued and processed via a FIFO queue, ensuring incremental reviews happen automatically as you interact with Claude.
-- Press **M** to manually trigger a SpecStory sync (useful if the hook doesn't fire or to force a refresh), **B** to go back to the session list from the running review screen.
-- Warmup-only sessions (where Claude injects the initial "Warmup" prompt for prompt caching) are hidden from the picker so Sage reviews the first meaningful user request.
-- Requirements: SpecStory CLI installed on the PATH, valid Codex credentials, and prior Claude activity in the repository.
+- `sage` launches a TUI that lists Claude Code sessions based on metadata emitted by Sage’s hooks (stored in `.sage/runtime/sessions/`). Use the arrow keys to pick one for review.
+- Install the hooks once per project with `npm run configure-hooks`; this registers `SessionStart`, `SessionEnd`, `Stop`, and `UserPromptSubmit` events that call Sage’s hook shim.
+- **Continuous mode:** After selecting a session, Sage performs an initial review, then watches `.sage/runtime/needs-review/` for hook signals. Each signal triggers an incremental review of the latest turns from Claude’s JSONL log.
+- Press **M** to rescan pending signals (useful if a hook fired while Sage was closed), **B** to go back to the session list.
+- Warmup-only sessions (where Claude’s only prompt is “Warmup”) are hidden from the picker so Sage focuses on meaningful conversations.
+- Requirements: valid Codex credentials, Claude Code hooks configured, and prior Claude activity in the repository.
 
 ---
 

@@ -70,7 +70,7 @@ When you select a session, Sage loads the thread metadata and determines which p
 
 **What happens:**
 1. Call `codex.startThread()` to create new Codex thread
-2. Extract all conversation turns from markdown export
+2. Extract all conversation turns from the JSONL transcript
 3. Run `runInitialReview()` with full conversation history
 4. Save thread ID + current turn count to `.sage/threads/{sessionId}.json`
 5. Display critique and enter continuous mode
@@ -90,7 +90,7 @@ When you select a session, Sage loads the thread metadata and determines which p
 
 **Detection logic:**
 ```typescript
-currentTurnCount = turns.length  // From markdown export
+currentTurnCount = turns.length  // From JSONL transcript
 lastReviewedTurnCount = metadata.lastReviewedTurnCount
 hasNewTurns = currentTurnCount > lastReviewedTurnCount
 ```
@@ -215,20 +215,19 @@ This prevents duplicate critique cards when resuming unchanged threads.
 
 ---
 
-## Continuous Mode & File Watching
+## Continuous Mode & Signal Processing
 
-Once initial review completes, Sage enters **continuous mode**:
+Once the initial review completes, Sage enters **continuous mode**:
 
-1. File watcher monitors `.sage/history/{sessionId}.md` for changes
-2. On change, extract new turns via turn signatures (not turn count)
-3. Enqueue incremental review job
-4. Call `performIncrementalReview()` with existing thread
-5. Display new critique and persist to cache
+1. A chokidar watcher listens to `.sage/runtime/needs-review/` for new signal files (one per `Stop` hook).
+2. Each signal is processed by re-reading the transcript with `extractTurns({ sinceUuid })`, which slices away previously reviewed turns using assistant UUIDs.
+3. Non-empty results enqueue an incremental review job and include the originating signal path so it can be deleted on success.
+4. `performIncrementalReview()` runs on the existing Codex thread, appends the critique, and updates the cache; failures leave the signal file in place for retry.
 
 **Turn tracking difference:**
-- Initial reviews use turn count from thread metadata
-- Continuous mode uses turn signatures (hashes) to detect new content
-- Both approaches prevent re-reviewing the same turns
+- Initial reviews rely on the turn count stored in thread metadata to determine whether anything changed since the last critique.
+- Continuous mode uses assistant UUIDs from the review cache to detect new content inside the same transcript.
+- Both approaches prevent re-reviewing the same turns, even when Claude resumes a session and clones prior history into a new JSONL file.
 
 ---
 

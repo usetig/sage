@@ -1,6 +1,6 @@
 import { Codex } from '@openai/codex-sdk';
 import type { Thread, ThreadOptions } from '@openai/codex-sdk';
-import type { TurnSummary } from './markdown.js';
+import type { TurnSummary } from './jsonl.js';
 
 export interface CritiqueResponse {
   verdict: 'Approved' | 'Concerns' | 'Critical Issues';

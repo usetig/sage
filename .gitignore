@@ -5,3 +5,4 @@ dist/
 .DS_Store
 .env
 .debug/
+.cursor/worktrees.json
