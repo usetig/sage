@@ -74,6 +74,16 @@ main session: ba93ece4-80ee-4f87-9b23-214d9e786827.jsonl (335KB, isSidechain: fa
 - **Discovery strategy**: Glob for `*.jsonl` but exclude `agent-*.jsonl` when listing sessions
 - **Version requirement**: Sage requires Claude Code 2.0.24+ (separate agent files)
 
+### 1.5 Compaction Artifacts
+
+Manual (`/compact`) or automatic compaction does **not** rewrite the JSONL file. Instead, Claude appends a small cluster of bookkeeping events to the end of the existing transcript:
+
+- A `user` entry with `isCompactSummary: true` that contains the generated conversation summary. Treat it as metadata; it should not trigger a fresh review.
+- One or more `user` entries flagged with `isMeta: true` that record the local command (`<command-name>/compact</command-name>`) and its stdout (`<local-command-stdout>…</local-command-stdout>`). These are emitted so Claude can reference the shell output if needed.
+- The usual `SessionStart`/`SessionEnd` hooks may fire with matcher `compact`, so use those to manage any active-session registry.
+
+When streaming new turns, skip `isCompactSummary` and `isMeta` records—they are operational noise and do not represent real user prompts.
+
 ---
 
 ## 2. Complete Event Type Catalog
