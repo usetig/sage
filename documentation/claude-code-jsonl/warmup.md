@@ -9,6 +9,7 @@ Short version: those “warmup” threads are **automatic sessions** Claude Code
 ### Why so many show up
 
 * Each time you start or resume, Claude Code may open a **new session file** and run that warmup turn—some recent IDE builds also have a **bug** that replaces the visible title with “Warmup” or loads the wrong conversation, making the clutter more obvious. ([GitHub][4])
+* As of Claude Code 2.0.24+ (confirmed in 2.0.28), delegated agents record their own transcripts (`agent-<id>.jsonl`). Those may also contain the initial “Warmup” exchange, so remember to exclude both the primary session file and any companion agent logs when filtering. Older builds (e.g., 2.0.13) store everything in the single session JSONL.
 
 ### Can you avoid or reduce them?
 

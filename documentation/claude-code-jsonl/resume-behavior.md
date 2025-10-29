@@ -24,6 +24,7 @@
   { "type": "summary", "timestamp": "2025-10-24T22:13:05Z", "sessionId": "<uuid>", "title": "quickly get context on this repo", "branch": "main" }
   ```
 * Common `type` values you may see: `user`, `assistant`, `tool`, `tool_result`, `summary`, `system`, `notification` (exact fields can vary by version).
+* **Sidechain transcripts:** Starting with Claude Code 2.0.24+ (confirmed in 2.0.28), delegated agents (Explore/Task/etc.) keep their own JSONL alongside the main session using the naming pattern `agent-<agentId>.jsonl`. Earlier builds (e.g., 2.0.13) embed those events directly in the session file. When crawling the directory, expect a mix depending on when the log was recorded.
 
 > **Retention note:** Local cleanup may prune old transcripts after N days. If you need longer history, back up or increase retention in settings.
 
@@ -33,7 +34,9 @@
 
 When you run `claude --resume` and pick a prior conversation, Claude loads that session’s context but **creates a *new* active session** for the subsequent turn(s). That means it writes new events to a **new `<new-uuid>.jsonl`** file.
 
-This can feel counterintuitive if you expect a single, continuous file. Think of it like Git commits across branches: the *history* is related, but each active editing session is its own append-only log.
+Before appending fresh turns, Claude seeds that new file with the **entire prior transcript**. You’ll see the earlier user/assistant messages copied over—often retaining their original `sessionId`—followed by the new turns that use the new session UUID. The original file is left untouched, so now you have overlapping history across two files; any tooling should dedupe by `uuid` or timestamp when merging chains.
+
+This can feel counterintuitive if you expect a single, continuous file. Think of it like Git commits across branches: the *history* is related, but each active editing session is its own append-only log (with the resume branch starting from a cloned baseline).
 
 ---
 
@@ -188,6 +191,8 @@ claude -p --resume "$sid" "Run the next step non-interactively"
 * **Inconsistent markers:** Some event types can carry fields that look like prior identifiers—use them as hints only.
 * **Retention/cleanup:** Local cleanup can remove older sessions, breaking naive chains—archive proactively if needed.
 * **Cross-machine ambiguity:** If you move logs between machines, project slugs/paths can differ; include the absolute `transcript_path` in your chain key when aggregating across hosts.
+* **Agent transcripts vs. inline logs:** Scripts written before 2.0.24 should either glob for `agent-*.jsonl` or fall back gracefully—newer runs emit them per agent, while historical directories may not contain any.
+* **Resume duplication:** Since resumed files include a copy of prior turns, expect duplicate `uuid` values between the old and new transcripts; dedupe before replaying events or computing diffs.
 
 ---
 
