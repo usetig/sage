@@ -10,7 +10,11 @@ interface HookPayload {
   prompt?: string;
 }
 
-const RUNTIME_DIR = path.join(process.cwd(), '.sage', 'runtime');
+const projectRoot = process.env.CLAUDE_PROJECT_DIR
+  ? path.resolve(process.env.CLAUDE_PROJECT_DIR)
+  : process.cwd();
+
+const RUNTIME_DIR = path.join(projectRoot, '.sage', 'runtime');
 const SESSIONS_DIR = path.join(RUNTIME_DIR, 'sessions');
 const QUEUE_DIR = path.join(RUNTIME_DIR, 'needs-review');
 const ERROR_LOG = path.join(RUNTIME_DIR, 'hook-errors.log');
