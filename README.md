@@ -180,20 +180,24 @@ git init
 ## Configuration
 
 ### Hook Configuration
-Sage auto-installs this hook to `.claude/settings.local.json`:
+Run `npm run configure-hooks` whenever you clone Sage into a new project. This command appends the following entries to `.claude/settings.local.json`:
 
 ```json
 {
   "hooks": {
-    "Stop": "specstory sync claude --output-dir .sage/history --no-version-check --silent"
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
+    "SessionEnd":   [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }]
   }
 }
 ```
 
-This runs after every Claude response to keep `.sage/history/` in sync.
+Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `.sage/runtime/`.
 
 ### Directory Structure
-- `.sage/history/` - SpecStory markdown exports (auto-generated)
+- `.sage/runtime/sessions/` - Active-session metadata captured from hooks
+- `.sage/runtime/needs-review/` - Signal files that queue critiques
 - `.sage/threads/` - Codex thread metadata for resumption (auto-generated)
 - `.sage/reviews/` - Cached critique history (auto-generated)
 - `.debug/` - Debug artifacts when `SAGE_DEBUG=1` (auto-generated)
@@ -221,7 +225,8 @@ npm start
 Sage uses:
 - **React + Ink** - Terminal UI framework
 - **OpenAI Codex SDK** - AI agent for code review
-- **SpecStory CLI** - Claude Code session export
+- **Claude Code hooks** - Session lifecycle + prompt metadata
+- **Claude JSONL transcripts** - Source of truth for conversation turns
 - **Chokidar** - File watching for continuous mode
 - **TypeScript** - Type-safe implementation
 
@@ -244,4 +249,3 @@ ISC
 
 - **Repository**: https://github.com/usetig/sage
 - **Issues**: https://github.com/usetig/sage/issues
-- **SpecStory Docs**: https://docs.specstory.com

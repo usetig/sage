@@ -39,7 +39,7 @@ The `turnSignature` is the SHA-256 hash of the user + agent content that Sage al
    - If the cache contains a `lastTurnSignature`, Sage treats it as the baseline for incremental reviews.
 2. **Initial review**
    - After the Codex run completes, `appendReview` persists the new critique to disk via `appendReviewToCache`.
-   - If the newly exported conversation no longer contains the cached signature (e.g., SpecStory rolled back), Sage deletes the cache and clears the UI so the user doesn’t see stale cards.
+   - If the Claude transcript no longer contains the cached signature (e.g., a resumed session dropped earlier turns), Sage deletes the cache and clears the UI so the user doesn’t see stale cards.
 3. **Incremental reviews**
    - Each completed review is appended and written atomically (`.tmp` + rename) so crashes never leave partial files.
 4. **Reset**
@@ -49,7 +49,7 @@ The `turnSignature` is the SHA-256 hash of the user + agent content that Sage al
 
 - Loads: invalid JSON is logged and ignored—Sage simply starts fresh.
 - Saves: failures surface a dim status message but never block the UI.
-- Deletion: `deleteReviewCache` is invoked when Sage detects the cached signature no longer exists in SpecStory exports.
+- Deletion: `deleteReviewCache` is invoked when Sage detects the cached signature no longer exists in the transcript.
 
 ## Limits
 

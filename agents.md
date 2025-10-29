@@ -67,44 +67,44 @@ This document gives any coding agent the context it needs to contribute safely a
 
 **Key modules and responsibilities:**
 
-- `src/lib/specstory.ts` — Wraps SpecStory sync and session discovery. Exports sessions to `.sage/history/` and parses markdown metadata, filtering warmup-only stubs.
-- `src/lib/hooks.ts` — Auto-configures Claude Code `Stop` hook to trigger `specstory sync` on each turn completion.
-- `src/ui/App.tsx` — Main TUI orchestrator. Manages session picker, file watcher (chokidar), FIFO queue, and continuous review state. Renders status and critique feed.
-- `src/ui/CritiqueCard.tsx` — Structured critique renderer with symbol-coded verdicts and color-coded sections.
-- `src/lib/markdown.ts` — Parses SpecStory markdown to extract all turns and compute turn signatures for incremental processing.
-- `src/lib/review.ts` — Review orchestration layer. Handles initial review (full context) and incremental reviews (new turns only).
+- `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/End/Stop/UserPromptSubmit). Writes per-session metadata to `.sage/runtime/sessions/` and queues review signals in `.sage/runtime/needs-review/`.
+- `src/scripts/configureHooks.ts` — CLI helper (`npm run configure-hooks`) that installs the Sage hook command into `.claude/settings.local.json`.
+- `src/lib/jsonl.ts` — Streams Claude JSONL transcripts, filters warmups/compactions, and extracts user⇄assistant turns.
+- `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and manages debug artifacts.
 - `src/lib/codex.ts` — Codex SDK wrapper with JSON schema for structured output. Builds initial and follow-up prompts, manages thread lifecycle.
+- `src/ui/App.tsx` — Main TUI orchestrator. Manages session picker, signal watcher (chokidar), FIFO queue, continuous review state, and clarification threads.
+- `src/ui/CritiqueCard.tsx` — Structured critique renderer with symbol-coded verdicts and color-coded sections.
 
 ---
 
 ## 4. External Dependencies & Environment Assumptions
 
-1. **SpecStory CLI** (`specstory`) must be on PATH. Sage calls `specstory sync claude --output-dir .sage/history --no-version-check --silent`. Make sure users install ≥0.12.0 (older versions used `-u`).
+1. **Claude Code 2.0.24+** — Required so delegated agent work is written to `agent-*.jsonl` files (modern log format Sage expects).
 2. **OpenAI Codex SDK** (`@openai/codex-sdk`) handles review generation. It talks to the local Codex agent; no API key is set in this repo.
 3. **Ink / React** render the TUI. Components rely on Node 18+.
-4. **Claude log format** is assumed to stay JSONL with `type`, `sessionId`, `message.{role,content}`, `summary`, and optional prompt caching warmups.
+4. **Claude JSONL logging** retains fields like `type`, `sessionId`, `message.{role,content}`, `summary`, and optional prompt caching warmups.
 
 ---
 
 ## 5. Warmup & Resume Behavior
 
 - Claude injects `Warmup` user turns to prime prompt caching. These appear as sidechain user entries with no follow-up. Sage treats any session whose **only** main user prompt is “Warmup” (case-insensitive) as a warmup stub (`isWarmup === true`) and hides it from the picker.
-- Resuming a session (`claude --resume`) creates a **new JSONL** with a new `sessionId`, but SpecStory exports the entire conversation under the **original** session ID. For now, Sage expects users to select the parent session when reviewing a resumed conversation. (Future work: automatically detect and chase the resume parent if an export is warmup-only.)
+- Resuming a session (`claude --resume`) clones the prior transcript into a **new JSONL** with a new `sessionId`, then appends fresh turns. Turn signatures (assistant UUIDs) are reused, so Sage relies on cached `lastTurnSignature` values to skip already-reviewed history.
 
 ---
 
 ## 6. Running Sage (developer workflow)
 
-1. Ensure SpecStory and the Codex agent are running locally.
+1. Ensure Claude Code and the Codex agent are running locally.
 2. From the repo root, run `npm start` (or `tsx src/index.tsx`).
 3. Sage shows an Ink TUI with session picker:
    - Arrow keys to navigate sessions.
    - `Enter` to select a session for review.
-   - `R` to refresh session list (re-run SpecStory sync).
+   - `R` to refresh session list (re-read `.sage/runtime/sessions/` metadata).
 4. After selection, Sage performs initial review and enters continuous mode:
    - Status line shows `⏵ Running initial review...` during setup
-   - Automatically installs Claude Code `Stop` hook if not present
-   - Starts watching the session's markdown file for new turns
+   - Confirms Claude hooks are writing metadata to `.sage/runtime/`
+   - Starts watching `.sage/runtime/needs-review/` for new signals
 5. As you continue with Claude Code, Sage automatically reviews new turns:
    - New turns are queued (FIFO) and displayed with prompt previews
    - Status shows `⏵ Reviewing "..."` with queue count
@@ -116,7 +116,7 @@ This document gives any coding agent the context it needs to contribute safely a
    - QUESTIONS section (if applicable)
    - MESSAGE FOR CLAUDE CODE AGENT section (only for Concerns/Critical Issues verdicts, when Sage has specific guidance for Claude)
 7. Keyboard controls in continuous mode:
-   - `M` to manually trigger SpecStory sync (useful when hook doesn't fire or for testing)
+   - `M` to rescan signal files (useful if a hook ran while Sage was closed)
    - `B` to exit and return to session picker
 
 ---
@@ -135,21 +135,20 @@ This document gives any coding agent the context it needs to contribute safely a
 
 **Avoid this:**
 
-- Don’t rely on undocumented SpecStory flags. Stick to `specstory sync claude --output-dir …`.
 - Don’t mutate `process.cwd()` or assume Codex will operate in a specific directory unless you pass the right context (future enhancement).
-- Avoid duplicating exports. If you need additional metadata from Claude logs, extend the parser rather than shelling out multiple times.
-- Don’t silently swallow errors from SpecStory or Codex; surface meaningful messages in the UI.
+- Avoid duplicating Claude JSONL parsing—extend `src/lib/jsonl.ts` if you need additional metadata.
+- Don’t silently swallow errors from Codex or hooks; surface meaningful messages in the UI.
 
 ---
 
 ## 8. Known Limitations & TODOs
 
-- **Resume chains:** Sage doesn't yet hop from a resumed session ID back to the parent export. Warmup-only exports during resumes still require manual selection of the original session. (Note: This is about **Claude session resumption** creating new session IDs, not Sage thread persistence—see below.)
+- **Resume chains:** Sage relies on cached assistant UUIDs to skip duplicated turns when Claude creates a new transcript on resume. More robust cross-file stitching is still future work.
 - **Thread persistence:** ✅ Sage now saves Codex thread metadata to `.sage/threads/` and automatically resumes threads when re-selecting sessions. The `isFreshCritique` flag prevents duplicate critiques when resuming unchanged threads. This enables context preservation across Sage restarts and faster incremental reviews. See `documentation/thread-persistence.md` for details.
 - **Incomplete responses on manual selection:** If you select a session while Claude is still typing, the initial review may process a partial response and potentially fail or produce inaccurate critique. Continuous mode is unaffected since the Stop hook only fires after Claude completes. Workaround: Wait for Claude to finish before selecting the session in Sage, or let continuous mode catch the complete response once it arrives.
 - **Critique history navigation:** Reviews stack vertically for scrollback but no arrow-key navigation within the UI. Users scroll their terminal to see previous reviews.
 - **Read-only enforcement:** Codex threads currently rely on context instructions; explicit permission settings (if supported by the SDK) would enhance safety.
-- **Comprehensive logging:** Minimal debug output goes to the console; consider writing a log file for diagnosing SpecStory or Codex failures.
+- **Comprehensive logging:** Minimal debug output goes to the console; consider writing a log file for diagnosing hook or Codex failures.
 
 ---
 
@@ -159,12 +158,12 @@ This document gives any coding agent the context it needs to contribute safely a
 | --- | --- |
 | Start Sage TUI | `npm start` or `tsx src/index.tsx` |
 | TypeScript build check | `npm run build` |
-| Session discovery & listing | `src/lib/specstory.ts` |
-| Hook auto-installation | `src/lib/hooks.ts` |
+| Session discovery & listing | `src/lib/jsonl.ts` |
+| Hook auto-installation | `src/scripts/configureHooks.ts` |
 | Codex prompt builder & schemas | `src/lib/codex.ts` |
 | Review orchestration | `src/lib/review.ts` |
 | Critique card component | `src/ui/CritiqueCard.tsx` |
-| Manual SpecStory export | `specstory sync claude --output-dir .sage/history` |
+| Hook shim | `src/hooks/sageHook.ts` |
 
 ---
 

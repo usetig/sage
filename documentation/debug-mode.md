@@ -1,6 +1,6 @@
 # Sage Debug Mode
 
-Debug mode lets you exercise Sage’s SpecStory plumbing, watcher, and UI without talking to the Codex agent. Instead of waiting on Codex responses, Sage returns deterministic mock critiques and stores the full prompt/context so you can inspect exactly what would have been sent.
+Debug mode lets you exercise Sage’s hook/JSONL plumbing, watcher, and UI without talking to the Codex agent. Instead of waiting on Codex responses, Sage returns deterministic mock critiques and stores the full prompt/context so you can inspect exactly what would have been sent.
 
 ## When to use it
 
@@ -34,7 +34,7 @@ Unset the variable (or set it to `0`/`false`) to resume normal Codex-backed revi
    - The artifact path is displayed in the UI under "Review #x • ..." for all reviews.
 
 3. **UI feedback changes**
-   - Status messages read `Debug mode active — Codex agent bypassed` and list the session ID, the SpecStory markdown path, and the artifact location.
+   - Status messages read `Debug mode active — Codex agent bypassed` and list the session ID, the Claude transcript path, and the artifact location.
    - Critique cards echo the same messaging and include the prompt instructions for quick reference.
 
 4. **Thread handling**
@@ -65,7 +65,7 @@ Open the file to see the precise payload Sage sent (or would have sent) to Codex
 
 - **Artifacts are always created:** As of recent updates, debug artifacts are written for every review, not just in debug mode. This lets you inspect Codex prompts even during normal operation.
 - Debug mode does **not** simulate Codex reasoning; it only confirms the scaffolding around prompt generation and queue handling.
-- Continuous mode still watches SpecStory exports and enqueues reviews. You can confirm watcher behavior without hitting external services.
+- Continuous mode still watches `.sage/runtime/needs-review/` for hook signals and enqueues reviews. You can confirm watcher behavior without hitting external services.
 - Because critiques in debug mode always return "Approved", downstream tooling should treat debug runs as non-authoritative.
 
 Use debug mode to iterate faster when Codex isn't available, then disable it to validate Sage's real review pipeline. Use the artifact files in either mode to inspect the exact prompts and context being sent to Codex.
