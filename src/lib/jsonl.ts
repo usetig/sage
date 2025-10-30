@@ -93,8 +93,9 @@ export async function extractTurns(options: {
 
   const entriesByUuid = new Map<string, any>();
   const primaryUserPrompts: Array<{ uuid: string; text: string }> = [];
-  const assistantEntries: Array<{ uuid: string; parentUuid: string | null; message: any }> = [];
-  const errorToolResults: Array<{ parentUuid: string | null }> = [];
+  const assistantEntries: Array<{ uuid: string; parentUuid: string | null; message: any; seq: number }> = [];
+  const errorToolResults: Array<{ parentUuid: string | null; seq: number }> = [];
+  let sequence = 0;
 
   try {
     for await (const line of rl) {
@@ -111,6 +112,7 @@ export async function extractTurns(options: {
       if (entry?.isCompactSummary || entry?.isMeta) continue;
 
       const uuid: string | null = typeof entry?.uuid === 'string' ? entry.uuid : null;
+      sequence += 1;
       if (uuid) {
         entriesByUuid.set(uuid, entry);
       }
@@ -120,14 +122,14 @@ export async function extractTurns(options: {
         if (isErrorToolResult(entry.message)) {
           const parentUuid =
             typeof entry.parentUuid === 'string' ? entry.parentUuid : null;
-          errorToolResults.push({ parentUuid });
+          errorToolResults.push({ parentUuid, seq: sequence });
         }
         if (!isPrimaryUserPrompt(entry)) {
           continue;
         }
-    const text = extractText(entry.message);
-    if (!text) continue;
-    primaryUserPrompts.push({ uuid, text });
+        const text = extractText(entry.message);
+        if (!text) continue;
+        primaryUserPrompts.push({ uuid, text });
       } else if (entry?.type === 'assistant' && entry?.message) {
         const parentUuid: string | null =
           typeof entry.parentUuid === 'string' ? entry.parentUuid : null;
@@ -137,6 +139,7 @@ export async function extractTurns(options: {
           uuid: assistantUuid,
           parentUuid,
           message: entry.message,
+          seq: sequence,
         });
       }
     }
@@ -148,8 +151,8 @@ export async function extractTurns(options: {
   const turns: TurnSummary[] = [];
   let latestUuid: string | null = null;
   const primaryUserSet = new Set(primaryUserPrompts.map((item) => item.uuid));
-  const responsesByUser = new Map<string, Array<{ uuid: string; message: any }>>();
-  const rejectedPrompts = new Set<string>();
+  const responsesByUser = new Map<string, Array<{ uuid: string; message: any; seq: number }>>();
+  const errorMarkers = new Map<string, number[]>();
 
   for (const entry of assistantEntries) {
     const rootUuid = resolveRootUserUuid(entry.parentUuid, entriesByUuid, primaryUserSet);
@@ -157,31 +160,48 @@ export async function extractTurns(options: {
     if (!responsesByUser.has(rootUuid)) {
       responsesByUser.set(rootUuid, []);
     }
-    responsesByUser.get(rootUuid)!.push({ uuid: entry.uuid, message: entry.message });
+    responsesByUser.get(rootUuid)!.push({ uuid: entry.uuid, message: entry.message, seq: entry.seq });
   }
 
-  for (const errorEntry of errorToolResults) {
-    const rootUuid = resolveRootUserUuid(errorEntry.parentUuid, entriesByUuid, primaryUserSet);
-    if (rootUuid) {
-      rejectedPrompts.add(rootUuid);
+  for (const marker of errorToolResults) {
+    const rootUuid = resolveRootUserUuid(marker.parentUuid, entriesByUuid, primaryUserSet);
+    if (!rootUuid) continue;
+    if (!errorMarkers.has(rootUuid)) {
+      errorMarkers.set(rootUuid, []);
     }
+    errorMarkers.get(rootUuid)!.push(marker.seq);
   }
 
   for (const userEntry of primaryUserPrompts) {
     const responses = responsesByUser.get(userEntry.uuid) ?? [];
+    responses.sort((a, b) => a.seq - b.seq);
+
     const agentPieces: string[] = [];
     let lastAssistantUuid: string | undefined;
+    let hasText = false;
+    let lastTextSeq = -Infinity;
 
     for (const response of responses) {
-      const formatted = formatAssistantMessage(response.message);
-      if (formatted.trim()) {
-        agentPieces.push(formatted.trim());
+      const { text: formatted, hasTextResponse } = formatAssistantMessage(response.message);
+      const trimmed = formatted.trim();
+      if (trimmed) {
+        agentPieces.push(trimmed);
       }
-      lastAssistantUuid = response.uuid;
-      latestUuid = response.uuid;
+      if (hasTextResponse) {
+        hasText = true;
+        lastTextSeq = Math.max(lastTextSeq, response.seq);
+        lastAssistantUuid = response.uuid;
+        latestUuid = response.uuid;
+      }
     }
 
-    if (rejectedPrompts.has(userEntry.uuid)) {
+    if (!hasText) {
+      continue;
+    }
+
+    const errorSeqs = errorMarkers.get(userEntry.uuid) ?? [];
+    const latestErrorSeq = errorSeqs.length ? Math.max(...errorSeqs) : -Infinity;
+    if (latestErrorSeq !== -Infinity && lastTextSeq <= latestErrorSeq) {
       continue;
     }
 
@@ -257,14 +277,17 @@ function resolveRootUserUuid(
   return null;
 }
 
-function formatAssistantMessage(message: any): string {
-  if (!message) return '';
-  if (typeof message === 'string') return message;
-  if (typeof message.content === 'string') return message.content;
+function formatAssistantMessage(message: any): { text: string; hasTextResponse: boolean } {
+  if (!message) return { text: '', hasTextResponse: false };
+  if (typeof message === 'string') return { text: message, hasTextResponse: true };
+  if (typeof message.content === 'string') {
+    return { text: message.content, hasTextResponse: true };
+  }
   const content = message.content;
-  if (!Array.isArray(content)) return '';
+  if (!Array.isArray(content)) return { text: '', hasTextResponse: false };
 
   const pieces: string[] = [];
+  let hasText = false;
   for (const chunk of content) {
     if (!chunk || typeof chunk !== 'object') continue;
     if (chunk.type === 'text' && typeof chunk.text === 'string') {
@@ -272,6 +295,7 @@ function formatAssistantMessage(message: any): string {
       if (text) {
         pieces.push(text);
       }
+      hasText = true;
       continue;
     }
     if (chunk.type === 'tool_use') {
@@ -282,7 +306,7 @@ function formatAssistantMessage(message: any): string {
       pieces.push(rendered ? `${header}\n${rendered}` : header);
     }
   }
-  return pieces.join('\n\n');
+  return { text: pieces.join('\n\n'), hasTextResponse: hasText };
 }
 
 const IGNORED_TOOL_NAMES = new Set(['Read', 'Task']);

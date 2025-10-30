@@ -222,7 +222,7 @@ async function runTests(): Promise<void> {
   );
   assert.equal(
     rejectionResult.latestTurnUuid,
-    'tool-edit-pending',
+    'text-pending',
     'latest turn uuid should still advance to the last assistant event',
   );
 
