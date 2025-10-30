@@ -426,8 +426,17 @@ export default function App() {
     if (review.isFreshCritique === false) {
       return;
     }
-    setReviews((prev) => [...prev, review]);
-    setCollapsedWhy((prev) => [...prev, review.critique.verdict === 'Approved']);
+    let appended = false;
+    setReviews((prev) => {
+      if (review.turnSignature && prev.some((item) => item.turnSignature === review.turnSignature)) {
+        return prev;
+      }
+      appended = true;
+      return [...prev, review];
+    });
+    if (appended) {
+      setCollapsedWhy((prev) => [...prev, review.critique.verdict === 'Approved']);
+    }
     void persistReview(review);
   }
 
