@@ -21,6 +21,7 @@ async function runTests(): Promise<void> {
         role: 'user',
         content: [{ type: 'text', text: 'Primary prompt' }],
       },
+      thinkingMetadata: { level: 'none', disabled: false, triggers: [] },
     }),
     JSON.stringify({
       type: 'assistant',
@@ -45,6 +46,7 @@ async function runTests(): Promise<void> {
         role: 'user',
         content: [{ type: 'text', text: 'Second prompt' }],
       },
+      thinkingMetadata: { level: 'none', disabled: false, triggers: [] },
     }),
     JSON.stringify({
       type: 'assistant',
@@ -67,6 +69,93 @@ async function runTests(): Promise<void> {
   const sliced = await extractTurns({ transcriptPath: filePath, sinceUuid: 'a1' });
   assert.equal(sliced.turns.length, 1, 'should return only new turns after a1');
   assert.equal(sliced.turns[0]?.assistantUuid, 'a2', 'new turn should point to assistant uuid a2');
+
+  const toolChainLines = [
+    JSON.stringify({
+      type: 'user',
+      uuid: 'prompt-1',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: 'Explain the project' }],
+      },
+      thinkingMetadata: { level: 'none', disabled: false, triggers: [] },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'ack-1',
+      parentUuid: 'prompt-1',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Exploring the repository…' }],
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'tool-edit',
+      parentUuid: 'ack-1',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Edit',
+            input: { path: 'src/app.ts', diff: '+++', note: 'example edit' },
+          },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      uuid: 'tool-result',
+      parentUuid: 'tool-edit',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-edit',
+            content: [{ type: 'text', text: 'Edit applied successfully' }],
+          },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'summary-1',
+      parentUuid: 'tool-result',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '## Summary\nProject overview here.' }],
+      },
+    }),
+  ];
+
+  const toolPath = await createTempJsonl(toolChainLines);
+  const toolResult = await extractTurns({ transcriptPath: toolPath });
+  assert.equal(toolResult.turns.length, 1, 'should yield one primary turn');
+  const mergedAgent = toolResult.turns[0]?.agent ?? '';
+  assert.ok(
+    mergedAgent.includes('Exploring the repository…'),
+    'agent text should include initial acknowledgement',
+  );
+  assert.ok(
+    mergedAgent.includes('[Tool Edit]'),
+    'agent text should include retained tool use metadata',
+  );
+  assert.ok(
+    mergedAgent.includes('## Summary'),
+    'agent text should include final assistant summary',
+  );
+  assert.equal(
+    toolResult.latestTurnUuid,
+    'summary-1',
+    'latest turn uuid should resolve to ultimate assistant response',
+  );
 
   console.log('jsonl extraction tests passed');
 }

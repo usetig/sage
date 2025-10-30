@@ -91,8 +91,9 @@ export async function extractTurns(options: {
   const stream = fs.createReadStream(transcriptPath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
-  const userEntries: Array<{ uuid: string; text: string }> = [];
-  const assistantByParent = new Map<string, { text: string[]; uuid: string }>();
+  const entriesByUuid = new Map<string, any>();
+  const primaryUserPrompts: Array<{ uuid: string; text: string }> = [];
+  const assistantEntries: Array<{ uuid: string; parentUuid: string | null; message: any }> = [];
 
   try {
     for await (const line of rl) {
@@ -108,23 +109,29 @@ export async function extractTurns(options: {
       if (entry?.isSidechain) continue;
       if (entry?.isCompactSummary || entry?.isMeta) continue;
 
+      const uuid: string | null = typeof entry?.uuid === 'string' ? entry.uuid : null;
+      if (uuid) {
+        entriesByUuid.set(uuid, entry);
+      }
+
       if (entry?.type === 'user' && entry?.message) {
-        const text = extractText(entry.message);
-        if (!text) continue;
-        userEntries.push({ uuid: entry.uuid ?? '', text });
-      } else if (entry?.type === 'assistant' && entry?.message && entry?.parentUuid) {
-        const text = extractText(entry.message);
-        if (!text) continue;
-        const existing = assistantByParent.get(entry.parentUuid);
-        if (existing) {
-          existing.text.push(text);
-        } else {
-          const assistantUuid = entry.uuid ?? entry.parentUuid;
-          assistantByParent.set(entry.parentUuid, {
-            uuid: assistantUuid,
-            text: [text],
-          });
+        if (!uuid) continue;
+        if (!isPrimaryUserPrompt(entry)) {
+          continue;
         }
+        const text = extractText(entry.message);
+        if (!text) continue;
+        primaryUserPrompts.push({ uuid, text });
+      } else if (entry?.type === 'assistant' && entry?.message) {
+        const parentUuid: string | null =
+          typeof entry.parentUuid === 'string' ? entry.parentUuid : null;
+        const assistantUuid: string | null = uuid ?? parentUuid;
+        if (!assistantUuid) continue;
+        assistantEntries.push({
+          uuid: assistantUuid,
+          parentUuid,
+          message: entry.message,
+        });
       }
     }
   } finally {
@@ -134,19 +141,40 @@ export async function extractTurns(options: {
 
   const turns: TurnSummary[] = [];
   let latestUuid: string | null = null;
-  for (const userEntry of userEntries) {
-    const assistant = assistantByParent.get(userEntry.uuid);
-    const assistantText = assistant ? assistant.text.join('\n\n') : undefined;
+  const primaryUserSet = new Set(primaryUserPrompts.map((item) => item.uuid));
+  const responsesByUser = new Map<string, Array<{ uuid: string; message: any }>>();
+
+  for (const entry of assistantEntries) {
+    const rootUuid = resolveRootUserUuid(entry.parentUuid, entriesByUuid, primaryUserSet);
+    if (!rootUuid) continue;
+    if (!responsesByUser.has(rootUuid)) {
+      responsesByUser.set(rootUuid, []);
+    }
+    responsesByUser.get(rootUuid)!.push({ uuid: entry.uuid, message: entry.message });
+  }
+
+  for (const userEntry of primaryUserPrompts) {
+    const responses = responsesByUser.get(userEntry.uuid) ?? [];
+    const agentPieces: string[] = [];
+    let lastAssistantUuid: string | undefined;
+
+    for (const response of responses) {
+      const formatted = formatAssistantMessage(response.message);
+      if (formatted.trim()) {
+        agentPieces.push(formatted.trim());
+      }
+      lastAssistantUuid = response.uuid;
+      latestUuid = response.uuid;
+    }
+
+    const assistantText = agentPieces.length ? agentPieces.join('\n\n') : undefined;
     const summary: TurnSummary = {
       user: userEntry.text,
       agent: assistantText,
       userUuid: userEntry.uuid,
-      assistantUuid: assistant?.uuid,
+      assistantUuid: lastAssistantUuid,
     };
     turns.push(summary);
-    if (assistant?.uuid) {
-      latestUuid = assistant.uuid;
-    }
   }
 
   if (sinceUuid) {
@@ -157,6 +185,90 @@ export async function extractTurns(options: {
   }
 
   return { turns, latestTurnUuid: latestUuid };
+}
+
+function isPrimaryUserPrompt(entry: any): boolean {
+  if (!entry || entry.type !== 'user') return false;
+  const message = entry.message;
+  if (!message || message.role !== 'user') return false;
+  if (!hasThinkingMetadata(entry.thinkingMetadata)) return false;
+  return extractText(message).trim().length > 0;
+}
+
+function hasThinkingMetadata(metadata: any): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  return true;
+}
+
+function resolveRootUserUuid(
+  parentUuid: string | null,
+  entriesByUuid: Map<string, any>,
+  primaryUserSet: Set<string>,
+): string | null {
+  let current = parentUuid ?? null;
+  const visited = new Set<string>();
+  while (current) {
+    if (visited.has(current)) {
+      return null;
+    }
+    visited.add(current);
+    if (primaryUserSet.has(current)) {
+      return current;
+    }
+    const parentEntry = entriesByUuid.get(current);
+    if (!parentEntry) {
+      return null;
+    }
+    const nextParent =
+      typeof parentEntry.parentUuid === 'string' ? parentEntry.parentUuid : null;
+    current = nextParent;
+  }
+  return null;
+}
+
+function formatAssistantMessage(message: any): string {
+  if (!message) return '';
+  if (typeof message === 'string') return message;
+  if (typeof message.content === 'string') return message.content;
+  const content = message.content;
+  if (!Array.isArray(content)) return '';
+
+  const pieces: string[] = [];
+  for (const chunk of content) {
+    if (!chunk || typeof chunk !== 'object') continue;
+    if (chunk.type === 'text' && typeof chunk.text === 'string') {
+      const text = chunk.text.trim();
+      if (text) {
+        pieces.push(text);
+      }
+      continue;
+    }
+    if (chunk.type === 'tool_use') {
+      const name = typeof chunk.name === 'string' ? chunk.name : '';
+      if (!shouldIncludeToolUse(name)) continue;
+      const header = name ? `[Tool ${name}]` : '[Tool]';
+      const rendered = stringifyToolInput(chunk.input);
+      pieces.push(rendered ? `${header}\n${rendered}` : header);
+    }
+  }
+  return pieces.join('\n\n');
+}
+
+const IGNORED_TOOL_NAMES = new Set(['Read', 'Task']);
+
+function shouldIncludeToolUse(name: string): boolean {
+  if (!name) return false;
+  return !IGNORED_TOOL_NAMES.has(name);
+}
+
+function stringifyToolInput(input: any): string {
+  if (input === null || input === undefined) return '';
+  if (typeof input === 'string') return input;
+  try {
+    return JSON.stringify(input, null, 2);
+  } catch {
+    return String(input);
+  }
 }
 
 async function isWarmupSession(transcriptPath: string): Promise<boolean> {
