@@ -267,12 +267,12 @@ function formatTurnsForPrompt(turns: TurnSummary[]): string {
       const topBorderFill = BOX_WIDTH - 5 - turnLabel.length;
 
       // │ USER PROMPT      ...      │ = 80 chars total
-      // │ (1) + space (1) + text (11) + fill + │ (1) = 80
-      const userPromptPadding = BOX_WIDTH - 2 - 'USER PROMPT'.length;
+      // │ (1) + space (1) + text (11) + fill + │ (1) = 80, so fill = 80 - 14 = 66
+      const userPromptPadding = BOX_WIDTH - 3 - 'USER PROMPT'.length;
 
       // │ CLAUDE RESPONSE  ...      │ = 80 chars total
-      // │ (1) + space (1) + text (15) + fill + │ (1) = 80
-      const claudeResponsePadding = BOX_WIDTH - 2 - 'CLAUDE RESPONSE'.length;
+      // │ (1) + space (1) + text (15) + fill + │ (1) = 80, so fill = 80 - 18 = 62
+      const claudeResponsePadding = BOX_WIDTH - 3 - 'CLAUDE RESPONSE'.length;
 
       const pieces = [
         `┌─ ${turnLabel} ${'─'.repeat(Math.max(0, topBorderFill))}┐`,
