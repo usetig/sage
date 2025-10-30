@@ -41,6 +41,27 @@ export async function performInitialReview(
   const latestTurn = turns.length ? turns[turns.length - 1] : null;
   const latestPromptPreview = latestTurn?.user ? previewText(latestTurn.user) : '(none captured)';
 
+  if (latestTurn && latestTurn.agent && latestTurn.assistantUuid === undefined) {
+    onProgress?.('Claude is still responding — initial review will wait for completion.');
+    return {
+      critique: {
+        verdict: 'Approved',
+        why: 'Initial review deferred until Claude finishes responding.',
+        alternatives: '',
+        questions: '',
+        message_for_agent: '',
+      },
+      transcriptPath,
+      completedAt: new Date().toISOString(),
+      latestPrompt: latestTurn.user,
+      thread: null,
+      turns,
+      debugInfo: undefined,
+      turnSignature: latestTurnUuid ?? undefined,
+      isFreshCritique: false,
+    };
+  }
+
   const promptPayload = buildInitialPromptPayload({
     sessionId,
     turns,
