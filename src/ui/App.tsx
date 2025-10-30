@@ -805,6 +805,11 @@ export default function App() {
               if (currentStatusMessage) {
                 return (
                   <>
+                    {currentJob && (
+                      <Text dimColor>
+                        Reviewing response for: "{currentJob.promptPreview}"
+                      </Text>
+                    )}
                     <Spinner message={currentStatusMessage} />
                     <Text dimColor>{keybindings}</Text>
                     {queueDisplay}
