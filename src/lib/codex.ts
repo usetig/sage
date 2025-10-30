@@ -257,14 +257,32 @@ export function buildFollowupPromptPayload(
 }
 
 function formatTurnsForPrompt(turns: TurnSummary[]): string {
+  const BOX_WIDTH = 80;
+
   return turns
     .map((turn, index) => {
+      const turnLabel = `Turn ${index + 1}`;
+      // ┌─ Turn N ───...───┐ = 80 chars total
+      // ┌ (1) + ─ (1) + space (1) + label + space (1) + fill + ┐ (1) = 80
+      const topBorderFill = BOX_WIDTH - 5 - turnLabel.length;
+
+      // │ USER PROMPT      ...      │ = 80 chars total
+      // │ (1) + space (1) + text (11) + fill + │ (1) = 80
+      const userPromptPadding = BOX_WIDTH - 2 - 'USER PROMPT'.length;
+
+      // │ CLAUDE RESPONSE  ...      │ = 80 chars total
+      // │ (1) + space (1) + text (15) + fill + │ (1) = 80
+      const claudeResponsePadding = BOX_WIDTH - 2 - 'CLAUDE RESPONSE'.length;
+
       const pieces = [
-        `Turn ${index + 1}`,
-        'User prompt:',
+        `┌─ ${turnLabel} ${'─'.repeat(Math.max(0, topBorderFill))}┐`,
+        '│ USER PROMPT' + ' '.repeat(userPromptPadding) + '│',
+        '└' + '─'.repeat(BOX_WIDTH - 2) + '┘',
         turn.user,
         '',
-        'Claude response:',
+        '┌' + '─'.repeat(BOX_WIDTH - 2) + '┐',
+        '│ CLAUDE RESPONSE' + ' '.repeat(claudeResponsePadding) + '│',
+        '└' + '─'.repeat(BOX_WIDTH - 2) + '┘',
         turn.agent ?? '(Claude has not responded yet)',
       ];
       return pieces.join('\n');

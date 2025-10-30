@@ -48,10 +48,11 @@ export async function performInitialReview(
   });
 
   const artifactPath = await writeDebugReviewArtifact({
-    fullPrompt: promptPayload.prompt,
     instructions: promptPayload.promptText,
     context: promptPayload.contextText,
     promptLabel: latestTurn?.user ?? sessionId,
+    sessionId,
+    reviewType: 'initial',
   });
 
   if (debug) {
@@ -190,10 +191,11 @@ export async function performIncrementalReview(
   const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
 
   const artifactPath = await writeDebugReviewArtifact({
-    fullPrompt: promptPayload.prompt,
     instructions: promptPayload.promptText,
     context: promptPayload.contextText,
     promptLabel: turns[turns.length - 1]?.user ?? sessionId,
+    sessionId,
+    reviewType: 'incremental',
   });
 
   if (debug) {

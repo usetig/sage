@@ -26,10 +26,11 @@ function sanitizeFilename(value: string): string {
 }
 
 export interface DebugArtifactPayload {
-  fullPrompt: string;
   instructions: string;
   context: string;
   promptLabel?: string;
+  sessionId?: string;
+  reviewType?: 'initial' | 'incremental';
 }
 
 export async function writeDebugReviewArtifact(
@@ -38,7 +39,7 @@ export async function writeDebugReviewArtifact(
   const baseDir = await ensureDebugDir();
   const nameSource = payload.promptLabel
     || payload.instructions.split('\n')[0]
-    || payload.fullPrompt.slice(0, 60);
+    || 'prompt';
   const slug = sanitizeFilename(nameSource);
   const baseName = `review-${slug || 'prompt'}`;
   let attempt = 0;
@@ -58,14 +59,27 @@ export async function writeDebugReviewArtifact(
       break;
     }
   }
+  const header = [
+    '=' .repeat(80),
+    'CODEX PROMPT DEBUG ARTIFACT',
+    '=' .repeat(80),
+    payload.sessionId ? `Session: ${payload.sessionId}` : '',
+    payload.reviewType ? `Review Type: ${payload.reviewType === 'initial' ? 'Initial Review' : 'Incremental Review'}` : '',
+  ].filter(Boolean).join('\n');
+
   const fileContents = [
-    'Full prompt payload (as sent to Codex):',
-    payload.fullPrompt,
+    header,
     '',
-    'Prompt instructions segment:',
+    '=' .repeat(80),
+    'INSTRUCTIONS',
+    '=' .repeat(80),
+    '',
     payload.instructions,
     '',
-    'Context segment:',
+    '=' .repeat(80),
+    'CONTEXT (Conversation Turns)',
+    '=' .repeat(80),
+    '',
     payload.context,
   ].join('\n');
   await fs.writeFile(filePath, fileContents, 'utf8');
