@@ -157,6 +157,75 @@ async function runTests(): Promise<void> {
     'latest turn uuid should resolve to ultimate assistant response',
   );
 
+  const rejectionLines = [
+    JSON.stringify({
+      type: 'user',
+      uuid: 'prompt-pending',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: 'Pending edit request' }],
+      },
+      thinkingMetadata: { level: 'none', disabled: false, triggers: [] },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'text-pending',
+      parentUuid: 'prompt-pending',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Applying edit…' }],
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'tool-edit-pending',
+      parentUuid: 'text-pending',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Edit',
+            input: { path: 'src/app.ts', diff: '+++', note: 'pending edit' },
+          },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      uuid: 'tool-result-pending',
+      parentUuid: 'tool-edit-pending',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-edit-pending',
+            content: 'The user does not want to proceed.',
+            is_error: true,
+          },
+        ],
+      },
+    }),
+  ];
+
+  const rejectionPath = await createTempJsonl(rejectionLines);
+  const rejectionResult = await extractTurns({ transcriptPath: rejectionPath });
+  assert.equal(
+    rejectionResult.turns.length,
+    0,
+    'tool rejections should not produce a review turn',
+  );
+  assert.equal(
+    rejectionResult.latestTurnUuid,
+    'tool-edit-pending',
+    'latest turn uuid should still advance to the last assistant event',
+  );
+
   console.log('jsonl extraction tests passed');
 }
 

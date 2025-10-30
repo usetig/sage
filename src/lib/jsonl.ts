@@ -94,6 +94,7 @@ export async function extractTurns(options: {
   const entriesByUuid = new Map<string, any>();
   const primaryUserPrompts: Array<{ uuid: string; text: string }> = [];
   const assistantEntries: Array<{ uuid: string; parentUuid: string | null; message: any }> = [];
+  const errorToolResults: Array<{ parentUuid: string | null }> = [];
 
   try {
     for await (const line of rl) {
@@ -116,12 +117,17 @@ export async function extractTurns(options: {
 
       if (entry?.type === 'user' && entry?.message) {
         if (!uuid) continue;
+        if (isErrorToolResult(entry.message)) {
+          const parentUuid =
+            typeof entry.parentUuid === 'string' ? entry.parentUuid : null;
+          errorToolResults.push({ parentUuid });
+        }
         if (!isPrimaryUserPrompt(entry)) {
           continue;
         }
-        const text = extractText(entry.message);
-        if (!text) continue;
-        primaryUserPrompts.push({ uuid, text });
+    const text = extractText(entry.message);
+    if (!text) continue;
+    primaryUserPrompts.push({ uuid, text });
       } else if (entry?.type === 'assistant' && entry?.message) {
         const parentUuid: string | null =
           typeof entry.parentUuid === 'string' ? entry.parentUuid : null;
@@ -143,6 +149,7 @@ export async function extractTurns(options: {
   let latestUuid: string | null = null;
   const primaryUserSet = new Set(primaryUserPrompts.map((item) => item.uuid));
   const responsesByUser = new Map<string, Array<{ uuid: string; message: any }>>();
+  const rejectedPrompts = new Set<string>();
 
   for (const entry of assistantEntries) {
     const rootUuid = resolveRootUserUuid(entry.parentUuid, entriesByUuid, primaryUserSet);
@@ -151,6 +158,13 @@ export async function extractTurns(options: {
       responsesByUser.set(rootUuid, []);
     }
     responsesByUser.get(rootUuid)!.push({ uuid: entry.uuid, message: entry.message });
+  }
+
+  for (const errorEntry of errorToolResults) {
+    const rootUuid = resolveRootUserUuid(errorEntry.parentUuid, entriesByUuid, primaryUserSet);
+    if (rootUuid) {
+      rejectedPrompts.add(rootUuid);
+    }
   }
 
   for (const userEntry of primaryUserPrompts) {
@@ -165,6 +179,10 @@ export async function extractTurns(options: {
       }
       lastAssistantUuid = response.uuid;
       latestUuid = response.uuid;
+    }
+
+    if (rejectedPrompts.has(userEntry.uuid)) {
+      continue;
     }
 
     const assistantText = agentPieces.length ? agentPieces.join('\n\n') : undefined;
@@ -198,6 +216,19 @@ function isPrimaryUserPrompt(entry: any): boolean {
 function hasThinkingMetadata(metadata: any): boolean {
   if (!metadata || typeof metadata !== 'object') return false;
   return true;
+}
+
+function isErrorToolResult(message: any): boolean {
+  if (!message) return false;
+  const content = Array.isArray(message.content) ? message.content : [];
+  return content.some((item: any) => {
+    if (!item || typeof item !== 'object') return false;
+    if (item.type !== 'tool_result') return false;
+    if (item.is_error === true) return true;
+    const text = typeof item.content === 'string' ? item.content : '';
+    return typeof text === 'string'
+      && /rejected|interrupted/i.test(text);
+  });
 }
 
 function resolveRootUserUuid(
