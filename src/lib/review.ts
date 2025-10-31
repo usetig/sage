@@ -41,6 +41,27 @@ export async function performInitialReview(
   const latestTurn = turns.length ? turns[turns.length - 1] : null;
   const latestPromptPreview = latestTurn?.user ? previewText(latestTurn.user) : '(none captured)';
 
+  if (!turns.length) {
+    onProgress?.('Waiting for Claude to provide its first full response before reviewing.');
+    return {
+      critique: {
+        verdict: 'Approved',
+        why: 'Initial review deferred — Sage will start once Claude finishes its first response.',
+        alternatives: '',
+        questions: '',
+        message_for_agent: '',
+      },
+      transcriptPath,
+      completedAt: new Date().toISOString(),
+      latestPrompt: undefined,
+      thread: null,
+      turns,
+      debugInfo: undefined,
+      turnSignature: lastReviewedUuid ?? undefined,
+      isFreshCritique: false,
+    };
+  }
+
   if (latestTurn && latestTurn.agent && latestTurn.assistantUuid === undefined) {
     onProgress?.('Claude is still responding — initial review will wait for completion.');
     return {

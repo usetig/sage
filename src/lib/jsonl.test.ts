@@ -157,6 +157,58 @@ async function runTests(): Promise<void> {
     'latest turn uuid should resolve to ultimate assistant response',
   );
 
+  const inProgressLines = [
+    JSON.stringify({
+      type: 'user',
+      uuid: 'pending-prompt',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: 'Generate documentation' }],
+      },
+      thinkingMetadata: { level: 'none', disabled: false, triggers: [] },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'pending-ack',
+      parentUuid: 'pending-prompt',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'On it—scanning the repo now.' }],
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'pending-tool',
+      parentUuid: 'pending-ack',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Explore',
+            input: { path: '.', note: 'analyze docs' },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const inProgressPath = await createTempJsonl(inProgressLines);
+  const inProgressResult = await extractTurns({ transcriptPath: inProgressPath });
+  assert.equal(
+    inProgressResult.turns.length,
+    0,
+    'should defer turns until Claude produces textual output after tool activity',
+  );
+  assert.equal(
+    inProgressResult.latestTurnUuid,
+    'pending-ack',
+    'latest uuid should still point to the most recent assistant text while waiting',
+  );
+
   const rejectionLines = [
     JSON.stringify({
       type: 'user',

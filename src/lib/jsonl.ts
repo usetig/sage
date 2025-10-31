@@ -178,10 +178,13 @@ export async function extractTurns(options: {
 
     const agentPieces: string[] = [];
     let lastAssistantUuid: string | undefined;
+    let candidateLatestUuid: string | undefined;
     let hasText = false;
     let lastTextSeq = -Infinity;
+    let lastResponseSeq = -Infinity;
 
     for (const response of responses) {
+      lastResponseSeq = Math.max(lastResponseSeq, response.seq);
       const { text: formatted, hasTextResponse } = formatAssistantMessage(response.message);
       const trimmed = formatted.trim();
       if (trimmed) {
@@ -191,11 +194,22 @@ export async function extractTurns(options: {
         hasText = true;
         lastTextSeq = Math.max(lastTextSeq, response.seq);
         lastAssistantUuid = response.uuid;
-        latestUuid = response.uuid;
+        candidateLatestUuid = response.uuid;
       }
     }
 
     if (!hasText) {
+      if (candidateLatestUuid) {
+        latestUuid = candidateLatestUuid;
+      }
+      continue;
+    }
+
+    // If the latest assistant event for this turn is not textual output, Claude is still working.
+    if (lastResponseSeq > lastTextSeq) {
+      if (candidateLatestUuid) {
+        latestUuid = candidateLatestUuid;
+      }
       continue;
     }
 
@@ -213,6 +227,10 @@ export async function extractTurns(options: {
       assistantUuid: lastAssistantUuid,
     };
     turns.push(summary);
+
+    if (candidateLatestUuid) {
+      latestUuid = candidateLatestUuid;
+    }
   }
 
   if (sinceUuid) {

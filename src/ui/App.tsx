@@ -83,6 +83,7 @@ export default function App() {
   const reviewCacheRef = useRef<SessionReviewCache | null>(null);
   const processedSignalsRef = useRef<Set<string>>(new Set());
   const activeSessionRef = useRef<ActiveSession | null>(null);
+  const initialReviewDeferredRef = useRef(false);
 
   useEffect(() => {
     void reloadSessions();
@@ -220,6 +221,7 @@ export default function App() {
 
     try {
       const lastReviewedUuid = cached?.lastTurnSignature ?? null;
+      initialReviewDeferredRef.current = false;
 
       const result = await performInitialReview(
         { sessionId: session.sessionId, transcriptPath: session.transcriptPath, lastReviewedUuid },
@@ -227,6 +229,8 @@ export default function App() {
       );
 
       codexThreadRef.current = result.thread;
+      const deferredInitialReview = result.thread === null && result.isFreshCritique === false;
+      initialReviewDeferredRef.current = deferredInitialReview;
 
       if (reviewCacheRef.current?.lastTurnSignature) {
         const cachedSignature = reviewCacheRef.current.lastTurnSignature;
@@ -248,9 +252,9 @@ export default function App() {
         lastTurnSignatureRef.current = result.turnSignature;
       }
 
-      const resumedWithoutChanges = result.isFreshCritique === false;
+      const resumedWithoutChanges = result.isFreshCritique === false && !deferredInitialReview;
 
-      if (!resumedWithoutChanges) {
+      if (result.isFreshCritique) {
         appendReview({
           critique: result.critique,
           transcriptPath: result.transcriptPath,
@@ -278,7 +282,9 @@ export default function App() {
           clearTimeout(resumeStatusTimeoutRef.current);
           resumeStatusTimeoutRef.current = null;
         }
-        if (resumedWithoutChanges) {
+        if (deferredInitialReview) {
+          setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+        } else if (resumedWithoutChanges) {
           setCurrentStatusMessage('Resuming Sage thread...');
           resumeStatusTimeoutRef.current = setTimeout(() => {
             setCurrentStatusMessage(null);
@@ -413,6 +419,7 @@ export default function App() {
     lastTurnSignatureRef.current = null;
     reviewCacheRef.current = null;
     processedSignalsRef.current.clear();
+    initialReviewDeferredRef.current = false;
   }
 
   async function cleanupWatcher() {
@@ -518,11 +525,66 @@ export default function App() {
       const job = queueRef.current[0];
       setCurrentJob(job);
 
-      if (!codexThreadRef.current && !debugMode) {
-        const message = 'No active Codex thread to continue the review.';
-        setCurrentStatusMessage(message);
-        setStatusMessages((prev) => [...prev, message]);
-        break;
+      const shouldRunDeferredInitial =
+        (!codexThreadRef.current || initialReviewDeferredRef.current) && !debugMode;
+
+      if (shouldRunDeferredInitial) {
+        try {
+          const deferredResult = await performInitialReview(
+            {
+              sessionId: job.sessionId,
+              transcriptPath: job.transcriptPath,
+              lastReviewedUuid: lastTurnSignatureRef.current,
+            },
+            (message) => setCurrentStatusMessage(message),
+          );
+
+          codexThreadRef.current = deferredResult.thread;
+
+          if (deferredResult.turnSignature) {
+            lastTurnSignatureRef.current = deferredResult.turnSignature;
+          }
+
+          const stillDeferred =
+            deferredResult.thread === null && deferredResult.isFreshCritique === false;
+          initialReviewDeferredRef.current = stillDeferred;
+
+          if (deferredResult.isFreshCritique) {
+            appendReview({
+              critique: deferredResult.critique,
+              transcriptPath: deferredResult.transcriptPath,
+              latestPrompt: deferredResult.latestPrompt,
+              debugInfo: deferredResult.debugInfo,
+              completedAt: deferredResult.completedAt,
+              turnSignature: deferredResult.turnSignature,
+              session: activeSessionRef.current ?? activeSession,
+              isFreshCritique: deferredResult.isFreshCritique,
+            });
+          }
+
+          if (!stillDeferred) {
+            setCurrentStatusMessage(null);
+            setStatusMessages([]);
+          } else {
+            setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+          }
+
+          try {
+            await fs.unlink(job.signalPath);
+          } catch {
+            // ignore unlink errors
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Initial review failed. Please try again.';
+          setCurrentStatusMessage(message);
+          setStatusMessages((prev) => [...prev, message]);
+        }
+
+        queueRef.current = queueRef.current.slice(1);
+        setQueue(queueRef.current);
+        setCurrentJob(null);
+        processedSignalsRef.current.delete(job.signalPath);
+        continue;
       }
 
       try {
