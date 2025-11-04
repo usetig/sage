@@ -1,7 +1,9 @@
 # Spec: Hook-Driven JSONL Ingestion (Replaces SpecStory)
 
+**Note**: This spec describes the original design. SessionEnd hook was removed in implementation due to unreliability; metadata files now persist.
+
 ## Goal
-Ingest Claude Code conversations directly from JSONL logs using hook-triggered signals, removing the SpecStory CLI and markdown parsing while preserving Sage’s review workflow.
+Ingest Claude Code conversations directly from JSONL logs using hook-triggered signals, removing the SpecStory CLI and markdown parsing while preserving Sage's review workflow.
 
 ## Assumptions
 - Claude Code version ≥ 2.0.24 (modern format with `agent-*.jsonl` sidechain files).
@@ -26,7 +28,7 @@ Ingest Claude Code conversations directly from JSONL logs using hook-triggered s
 
 ## Phase 1 – Hook Runner
 1. **Hook command registration**
-   - Events: `SessionStart`, `SessionEnd`, `Stop`, `UserPromptSubmit`.
+   - Events: `SessionStart`, `Stop`, `UserPromptSubmit`. *(SessionEnd removed in implementation)*
    - Command: `npx tsx "$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts"`.
 
 2. **Hook shim (`src/hooks/sageHook.ts`) responsibilities**
@@ -43,7 +45,7 @@ Ingest Claude Code conversations directly from JSONL logs using hook-triggered s
      }
      ```
    - Append review signals by writing `.sage/runtime/needs-review/{sessionId}` containing `{ transcriptPath, queuedAt }`. If the file already exists, leave it (idempotent).
-   - `SessionEnd`: delete session metadata file and any pending signal.
+   - ~~`SessionEnd`: delete session metadata file and any pending signal.~~ *(Removed: unreliable, metadata now persists)*
    - Ensure all writes are atomic (fs.writeFile to temp → fs.rename) and use unique temp filenames.
    - Never crash; on unexpected errors, log and exit 0 so hooks don’t fail in Claude Code.
 
@@ -83,8 +85,8 @@ Add new utilities:
 3. **Manual sync key**  
    - “M” key triggers re-scan of `needs-review/` (useful after fixing errors).
 
-4. **Cleanup on session removal**  
-   - If `SessionEnd` removes metadata, ensure active session list updates immediately (watcher on `sessions/` or periodic refresh).
+4. **Cleanup on session removal**
+   - ~~If `SessionEnd` removes metadata, ensure active session list updates immediately (watcher on `sessions/` or periodic refresh).~~ *(SessionEnd removed: metadata persists, stale sessions remain visible)*
 
 ## Phase 4 – Review Pipeline Adjustments
 - Update `src/lib/review.ts` to accept `TurnSummary[]` from the JSONL module instead of SpecStory markdown.

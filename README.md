@@ -186,7 +186,6 @@ Run `npm run configure-hooks` whenever you clone Sage into a new project. This c
 {
   "hooks": {
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
-    "SessionEnd":   [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
     "Stop":         [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }]
   }

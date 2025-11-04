@@ -46,16 +46,6 @@ async function writeFileAtomic(filePath: string, contents: string): Promise<void
   await fs.promises.rename(tempPath, filePath);
 }
 
-async function removeFileIfExists(filePath: string): Promise<void> {
-  try {
-    await fs.promises.unlink(filePath);
-  } catch (error: any) {
-    if (error?.code !== 'ENOENT') {
-      throw error;
-    }
-  }
-}
-
 async function appendError(message: string): Promise<void> {
   try {
     ensureRuntimeDirs();
@@ -83,27 +73,6 @@ async function handlePayload(raw: string): Promise<void> {
   }
 
   const sessionFile = path.join(SESSIONS_DIR, `${sessionId}.json`);
-  if (eventName === 'SessionEnd') {
-    try {
-      await removeFileIfExists(sessionFile);
-    } catch (error: any) {
-      await appendError(`Failed to remove session metadata: ${error.message ?? error}`);
-    }
-
-    try {
-      const entries = await fs.promises.readdir(QUEUE_DIR);
-      await Promise.all(
-        entries
-          .filter((entry) => entry.startsWith(`${sessionId}-`) || entry === sessionId)
-          .map((entry) => removeFileIfExists(path.join(QUEUE_DIR, entry))),
-      );
-    } catch (error: any) {
-      if (error?.code !== 'ENOENT') {
-        await appendError(`Failed to clean signals for ${sessionId}: ${error.message ?? error}`);
-      }
-    }
-    return;
-  }
 
   let metadata: any = {};
   try {

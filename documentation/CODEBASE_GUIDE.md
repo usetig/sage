@@ -64,9 +64,9 @@ Sage solves this by integrating seamlessly into the workflow with zero additiona
 ┌─────────────────────────────────────────────────────────────┐
 │                    Claude Code (External)                   │
 │                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ SessionStart │  │      Stop    │  │SessionEnd    │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ SessionStart │  │      Stop    │  │UserPromptSubmit  │  │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────────┘  │
 │         │                 │                 │               │
 │         └─────────────────┼─────────────────┘               │
 │                           │                                 │
@@ -896,9 +896,10 @@ CONTEXT (Conversation Turns)
 **Hook Events Handled**:
 
 - `SessionStart`: Creates session metadata file
-- `SessionEnd`: Deletes session metadata and signals
 - `Stop`: Updates metadata, creates review signal
 - `UserPromptSubmit`: Updates last prompt in metadata
+
+**Note**: SessionEnd hook was removed due to unreliability. Metadata files accumulate over time but are harmless.
 
 **Input**: JSON payload via stdin
 
@@ -949,12 +950,8 @@ interface HookPayload {
 1. Parse JSON from stdin
 2. Validate required fields (session_id, transcript_path, hook_event_name)
 3. Ensure runtime directories exist
-4. Handle SessionEnd:
-   → Delete session metadata
-   → Delete all signals for session
-   → Return
-5. Load existing session metadata (if exists)
-6. Update metadata:
+4. Load existing session metadata (if exists)
+5. Update metadata:
    - sessionId, transcriptPath
    - cwd (if provided)
    - lastUpdated
@@ -1014,7 +1011,6 @@ const projectRoot = process.env.CLAUDE_PROJECT_DIR
         "timeout": 30
       }]
     }],
-    "SessionEnd": [...],
     "Stop": [...],
     "UserPromptSubmit": [...]
   }
@@ -1493,7 +1489,7 @@ function normalizeCache(raw: Partial<SessionReviewCache> | null, sessionId: stri
 
 - Writes to `.claude/settings.local.json`
 - Command: `npx tsx "$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts"`
-- Events: `SessionStart`, `SessionEnd`, `Stop`, `UserPromptSubmit`
+- Events: `SessionStart`, `Stop`, `UserPromptSubmit`
 
 **Hook Execution** (`sageHook.ts`):
 

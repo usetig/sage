@@ -28,7 +28,7 @@ Coding agents (Claude Code) can sound confident while being wrong or incomplete.
 ## v0 CLI status
 
 - `sage` launches a TUI that lists Claude Code sessions based on metadata emitted by Sage’s hooks (stored in `.sage/runtime/sessions/`). Use the arrow keys to pick one for review.
-- Install the hooks once per project with `npm run configure-hooks`; this registers `SessionStart`, `SessionEnd`, `Stop`, and `UserPromptSubmit` events that call Sage’s hook shim.
+- Install the hooks once per project with `npm run configure-hooks`; this registers `SessionStart`, `Stop`, and `UserPromptSubmit` events that call Sage's hook shim.
 - **Continuous mode:** After selecting a session, Sage performs an initial review, then watches `.sage/runtime/needs-review/` for hook signals. Each signal triggers an incremental review of the latest turns from Claude’s JSONL log.
 - Press **M** to rescan pending signals (useful if a hook fired while Sage was closed), **B** to go back to the session list.
 - Warmup-only sessions (where Claude’s only prompt is “Warmup”) are hidden from the picker so Sage focuses on meaningful conversations.

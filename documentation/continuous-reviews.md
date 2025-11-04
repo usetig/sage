@@ -6,8 +6,8 @@ This guide documents the current continuous-review implementation that rides on 
 
 ## End-to-End Flow
 
-1. **Hook emits metadata**  
-   - Claude Code fires `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd`.  
+1. **Hook emits metadata**
+   - Claude Code fires `SessionStart`, `UserPromptSubmit`, and `Stop`.
    - `src/hooks/sageHook.ts` writes `.sage/runtime/sessions/{sessionId}.json` (metadata) and, on `Stop`, drops a signal file in `.sage/runtime/needs-review/{sessionId}` containing `{ sessionId, transcriptPath, queuedAt }`.
 
 2. **Session selection**  
@@ -37,7 +37,7 @@ This guide documents the current continuous-review implementation that rides on 
 
 | Location | Responsibility |
 | --- | --- |
-| `src/hooks/sageHook.ts` | Validate hook payloads, maintain per-session metadata, emit review signals, and clean up on `SessionEnd`. All writes are atomic and errors are logged to `.sage/runtime/hook-errors.log`. |
+| `src/hooks/sageHook.ts` | Validate hook payloads, maintain per-session metadata, and emit review signals. All writes are atomic and errors are logged to `.sage/runtime/hook-errors.log`. Note: SessionEnd hook removed due to unreliability; metadata files persist. |
 | `src/lib/jsonl.ts` | List active sessions, detect warmups, and stream transcripts into `TurnSummary[]` collections while skipping compaction noise. |
 | `src/lib/review.ts` | Drive initial and follow-up Codex prompts, manage thread persistence, and hand back `turnSignature` values (assistant UUIDs) for cache dedupe. |
 | `src/ui/App.tsx` | Orchestrate the TUI, signal watcher, queue, Codex thread lifecycle, clarification mode, and persistence of review history. |
@@ -68,9 +68,9 @@ Status messaging reflects the current stage (initial review, incremental review,
 ## Failure & Recovery
 
 - **Missing transcript** — If hook metadata points to a deleted transcript, `processSignalFile()` logs a warning, removes the signal, and clears the session entry on the next refresh.  
-- **Codex error** — Queue item stays at the head, status logs “Review failed …”. Clearing the error (e.g., restarting Codex) and pressing `M` replays the signal.  
-- **Hook writer errors** — Logged to `.sage/runtime/hook-errors.log`; signals are not emitted. Fix the hook (often missing `cwd`/`transcript_path`) and re-run the prompt to regenerate a signal.  
-- **Manual session end** — `SessionEnd` deletes both metadata and signal files so the picker immediately hides the closed session.
+- **Codex error** — Queue item stays at the head, status logs "Review failed …". Clearing the error (e.g., restarting Codex) and pressing `M` replays the signal.
+- **Hook writer errors** — Logged to `.sage/runtime/hook-errors.log`; signals are not emitted. Fix the hook (often missing `cwd`/`transcript_path`) and re-run the prompt to regenerate a signal.
+- **Stale sessions** — Metadata files persist even after Claude sessions close. Old sessions remain visible in the picker but are sorted by recency (least recent at bottom).
 
 ---
 

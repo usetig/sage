@@ -218,13 +218,13 @@ Manual sync (M key):
 ## Major Components
 
 ### 1. Hook Shim (`src/hooks/sageHook.ts`)
-- Handles `SessionStart`, `SessionEnd`, `Stop`, and `UserPromptSubmit` events from Claude Code.
+- Handles `SessionStart`, `Stop`, and `UserPromptSubmit` events from Claude Code. *(SessionEnd removed due to unreliability)*
 - Validates payloads, records per-session metadata under `.sage/runtime/sessions/{sessionId}.json`.
 - Appends review "signals" to `.sage/runtime/needs-review/{sessionId}` when a `Stop` event fires.
 - Uses atomic writes (temp file → rename) and logs issues to `.sage/runtime/hook-errors.log` without failing the hook.
 
 ### 2. Hook Installer (`npm run configure-hooks`)
-- New script (`src/scripts/configureHooks.ts`) updates `~/.claude/settings.local.json` to register the hook command: `npx tsx "$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts"` for the four events.
+- New script (`src/scripts/configureHooks.ts`) updates `~/.claude/settings.local.json` to register the hook command: `npx tsx "$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts"` for the three events.
 - Users run this once per project; startup still warns if hooks are missing.
 
 ### 3. JSONL Utilities (`src/lib/jsonl.ts` + tests)

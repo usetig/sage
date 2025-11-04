@@ -3,7 +3,7 @@ import os from 'os';
 import { promises as fs } from 'fs';
 
 const HOOK_COMMAND = 'npx tsx "$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts"';
-const TARGET_EVENTS = ['SessionStart', 'SessionEnd', 'Stop', 'UserPromptSubmit'] as const;
+const TARGET_EVENTS = ['SessionStart', 'Stop', 'UserPromptSubmit'] as const;
 
 async function ensureHooks(): Promise<void> {
   const settingsDir = path.join(process.cwd(), '.claude');
