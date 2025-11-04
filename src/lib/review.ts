@@ -5,6 +5,7 @@ import {
   buildInitialPromptPayload,
   buildFollowupPromptPayload,
   type CritiqueResponse,
+  type StreamEvent,
   codexInstance,
 } from './codex.js';
 import { extractTurns, type TurnSummary } from './jsonl.js';
@@ -22,6 +23,7 @@ export interface ReviewResult {
     promptText: string;
   };
   isFreshCritique: boolean;
+  streamEvents: StreamEvent[];
 }
 
 export type InitialReviewResult = ReviewResult & {
@@ -32,6 +34,7 @@ export type InitialReviewResult = ReviewResult & {
 export async function performInitialReview(
   session: { sessionId: string; transcriptPath: string; lastReviewedUuid: string | null },
   onProgress?: (message: string) => void,
+  onStreamEvent?: (event: StreamEvent) => void,
 ): Promise<InitialReviewResult> {
   const { sessionId, transcriptPath, lastReviewedUuid } = session;
   const debug = isDebugMode();
@@ -59,6 +62,7 @@ export async function performInitialReview(
       debugInfo: undefined,
       turnSignature: lastReviewedUuid ?? undefined,
       isFreshCritique: false,
+      streamEvents: [],
     };
   }
 
@@ -80,6 +84,7 @@ export async function performInitialReview(
       debugInfo: undefined,
       turnSignature: latestTurnUuid ?? undefined,
       isFreshCritique: false,
+      streamEvents: [],
     };
   }
 
@@ -109,6 +114,9 @@ export async function performInitialReview(
       promptPayload.promptText,
     ].join('\n');
 
+    const debugEvent = makeDebugStreamEvent('Debug mode active — streaming disabled.');
+    onStreamEvent?.(debugEvent);
+
     return {
       critique: {
         verdict: 'Approved',
@@ -128,6 +136,7 @@ export async function performInitialReview(
       },
       turnSignature: latestTurnUuid ?? undefined,
       isFreshCritique: true,
+      streamEvents: [debugEvent],
     };
   }
 
@@ -141,6 +150,7 @@ export async function performInitialReview(
 
   let critique: CritiqueResponse;
   let isFreshCritique = true;
+  let streamEvents: StreamEvent[] = [];
 
   if (isResumedThread && !hasNewTurns) {
     onProgress?.('Resuming Sage thread...');
@@ -152,6 +162,7 @@ export async function performInitialReview(
       message_for_agent: '',
     };
     isFreshCritique = false;
+    streamEvents = [];
   } else if (isResumedThread && hasNewTurns) {
     onProgress?.('examining new dialogue...');
     const newTurns = turns.slice(lastReviewedTurnCount);
@@ -160,9 +171,14 @@ export async function performInitialReview(
       setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
     });
 
-    const reviewPromise = runFollowupReview(thread, { sessionId, newTurns });
+    const reviewPromise = runFollowupReview(
+      thread,
+      { sessionId, newTurns },
+      { onEvent: onStreamEvent },
+    );
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
+    streamEvents = result.streamEvents;
     isFreshCritique = true;
 
     await updateThreadTurnCount(sessionId, currentTurnCount);
@@ -179,11 +195,16 @@ export async function performInitialReview(
         turns,
         latestTurnSummary: latestTurn ?? undefined,
       },
-      thread,
+      {
+        thread,
+        promptPayload,
+        onEvent: onStreamEvent,
+      },
     );
 
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
+    streamEvents = result.streamEvents;
     isFreshCritique = true;
 
     const threadId = thread.id;
@@ -209,6 +230,7 @@ export async function performInitialReview(
     },
     turnSignature: latestTurnUuid ?? lastReviewedUuid ?? undefined,
     isFreshCritique,
+    streamEvents,
   };
 }
 
@@ -223,6 +245,7 @@ export interface IncrementalReviewRequest {
 export async function performIncrementalReview(
   request: IncrementalReviewRequest,
   onProgress?: (message: string) => void,
+  onStreamEvent?: (event: StreamEvent) => void,
 ): Promise<ReviewResult> {
   const { sessionId, transcriptPath, thread, turns, latestTurnSignature } = request;
   if (!turns.length) {
@@ -241,6 +264,8 @@ export async function performIncrementalReview(
   });
 
   if (debug) {
+    const debugEvent = makeDebugStreamEvent('Debug mode active — streaming disabled.');
+    onStreamEvent?.(debugEvent);
     return {
       critique: {
         verdict: 'Approved',
@@ -266,6 +291,7 @@ export async function performIncrementalReview(
         promptText: promptPayload.promptText,
       },
       isFreshCritique: true,
+      streamEvents: [debugEvent],
     };
   }
 
@@ -279,8 +305,14 @@ export async function performIncrementalReview(
     setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
   });
 
-  const reviewPromise = runFollowupReview(thread, { sessionId, newTurns: turns });
-  const { critique } = await Promise.race([reviewPromise, timeoutPromise]);
+  const { critique, streamEvents } = await Promise.race([
+    runFollowupReview(
+      thread,
+      { sessionId, newTurns: turns },
+      { promptPayload, onEvent: onStreamEvent },
+    ),
+    timeoutPromise,
+  ]);
 
   return {
     critique,
@@ -293,6 +325,7 @@ export async function performIncrementalReview(
       promptText: promptPayload.promptText,
     },
     isFreshCritique: true,
+    streamEvents,
   };
 }
 
@@ -300,6 +333,16 @@ function previewText(text: string, maxLength = 160): string {
   const trimmed = text.trim().replace(/\s+/g, ' ');
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, maxLength - 1)}…`;
+}
+
+function makeDebugStreamEvent(message: string): StreamEvent {
+  const timestamp = Date.now();
+  return {
+    id: `debug-${timestamp}-${Math.random().toString(16).slice(2)}`,
+    timestamp,
+    tag: 'status',
+    message,
+  };
 }
 
 export async function clarifyReview(

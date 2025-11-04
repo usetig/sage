@@ -56,6 +56,7 @@ This guide documents the current continuous-review implementation that rides on 
 
 ## UI & Hotkeys
 
+- `Ctrl+O` — Toggle the live Codex activity stream overlay.  
 - `B` — Exit continuous mode and return to the session list.  
 - `M` — Manually rescan `.sage/runtime/needs-review/` (useful after resolving hook issues or when running in debug mode).  
 - `W` — Toggle the WHY section for approved critiques (collapses/expands in batch).  

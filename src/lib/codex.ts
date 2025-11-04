@@ -1,5 +1,5 @@
 import { Codex } from '@openai/codex-sdk';
-import type { Thread, ThreadOptions } from '@openai/codex-sdk';
+import type { Thread, ThreadEvent, ThreadItem, ThreadOptions } from '@openai/codex-sdk';
 import type { TurnSummary } from './jsonl.js';
 
 export interface CritiqueResponse {
@@ -63,41 +63,69 @@ export interface PromptPayload {
   contextText: string;
 }
 
+export type StreamEventTag =
+  | 'assistant'
+  | 'reasoning'
+  | 'command'
+  | 'file'
+  | 'todo'
+  | 'status'
+  | 'error';
+
+export interface StreamEvent {
+  id: string;
+  timestamp: number;
+  tag: StreamEventTag;
+  message: string;
+}
+
+export interface RunReviewOptions {
+  thread?: Thread;
+  promptPayload?: PromptPayload;
+  onEvent?: (event: StreamEvent) => void;
+}
+
+export interface RunInitialReviewResult {
+  thread: Thread;
+  critique: CritiqueResponse;
+  promptPayload: PromptPayload;
+  streamEvents: StreamEvent[];
+}
+
+export interface RunFollowupReviewResult {
+  critique: CritiqueResponse;
+  promptPayload: PromptPayload;
+  streamEvents: StreamEvent[];
+}
+
 export async function runInitialReview(
   context: InitialReviewContext,
-  thread?: Thread,
-): Promise<{ thread: Thread; critique: CritiqueResponse; promptPayload: PromptPayload }> {
-  const reviewThread = thread ?? singleton.startThread(getConfiguredThreadOptions());
-  const payload = buildInitialPromptPayload(context);
-  const result = await reviewThread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
-
-  // When outputSchema is used, finalResponse contains the structured object
-  const critique = typeof result.finalResponse === 'object'
-    ? result.finalResponse as CritiqueResponse
-    : JSON.parse(result.finalResponse as string) as CritiqueResponse;
+  options?: RunReviewOptions,
+): Promise<RunInitialReviewResult> {
+  const reviewThread = options?.thread ?? singleton.startThread(getConfiguredThreadOptions());
+  const payload = options?.promptPayload ?? buildInitialPromptPayload(context);
+  const { critique, events } = await executeStreamedTurn(reviewThread, payload.prompt, options?.onEvent);
 
   return {
     thread: reviewThread,
     critique,
     promptPayload: payload,
+    streamEvents: events,
   };
 }
 
 export async function runFollowupReview(
   thread: Thread,
   context: FollowupReviewContext,
-): Promise<{ critique: CritiqueResponse; promptPayload: PromptPayload }> {
-  const payload = buildFollowupPromptPayload(context);
-  const result = await thread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
-
-  // When outputSchema is used, finalResponse contains the structured object
-  const critique = typeof result.finalResponse === 'object'
-    ? result.finalResponse as CritiqueResponse
-    : JSON.parse(result.finalResponse as string) as CritiqueResponse;
+  options?: Omit<RunReviewOptions, 'thread'>,
+): Promise<RunFollowupReviewResult> {
+  const payload = options?.promptPayload ?? buildFollowupPromptPayload(context);
+  const { critique, events } = await executeStreamedTurn(thread, payload.prompt, options?.onEvent);
 
   return {
     critique,
     promptPayload: payload,
+    streamEvents: events,
   };
 }
 
@@ -288,4 +316,237 @@ function formatTurnsForPrompt(turns: TurnSummary[]): string {
       return pieces.join('\n');
     })
     .join('\n\n');
+}
+
+const MAX_STREAM_MESSAGE_LENGTH = 600;
+let streamEventCounter = 0;
+
+async function executeStreamedTurn(
+  thread: Thread,
+  prompt: string,
+  onEvent?: (event: StreamEvent) => void,
+): Promise<{ critique: CritiqueResponse; events: StreamEvent[] }> {
+  const { events } = await thread.runStreamed(prompt, { outputSchema: CRITIQUE_SCHEMA });
+  const collected: StreamEvent[] = [];
+  let critique: CritiqueResponse | null = null;
+
+  for await (const event of events) {
+    const derived = convertThreadEventToStreamEvents(event);
+    if (derived.length) {
+      for (const entry of derived) {
+        collected.push(entry);
+        onEvent?.(entry);
+      }
+    }
+
+    const maybeCritique = extractCritiqueFromEvent(event);
+    if (maybeCritique) {
+      critique = maybeCritique;
+    }
+
+    if (event.type === 'turn.failed') {
+      const errorMessage = event.error?.message ?? 'Codex turn failed';
+      throw new Error(errorMessage);
+    }
+  }
+
+  if (!critique) {
+    throw new Error('Codex returned no structured critique.');
+  }
+
+  return { critique, events: collected };
+}
+
+function convertThreadEventToStreamEvents(event: ThreadEvent): StreamEvent[] {
+  const timestamp = Date.now();
+
+  switch (event.type) {
+    case 'item.started':
+      return describeItemEvent('started', event.item, timestamp);
+    case 'item.updated':
+      return describeItemEvent('updated', event.item, timestamp);
+    case 'item.completed':
+      return describeItemEvent('completed', event.item, timestamp);
+    case 'turn.completed': {
+      const usage = event.usage ?? {};
+      const parts = [
+        'Turn completed',
+        typeof usage.input_tokens === 'number' ? `input ${usage.input_tokens}` : null,
+        typeof usage.cached_input_tokens === 'number' ? `cached ${usage.cached_input_tokens}` : null,
+        typeof usage.output_tokens === 'number' ? `output ${usage.output_tokens}` : null,
+      ].filter(Boolean);
+      return [makeStreamEvent('status', parts.join(' • '), timestamp)];
+    }
+    case 'turn.failed': {
+      const message = event.error?.message ?? 'Codex turn failed';
+      return [makeStreamEvent('error', `Turn failed: ${message}`, timestamp)];
+    }
+    default:
+      return [];
+  }
+}
+
+function describeItemEvent(
+  stage: 'started' | 'updated' | 'completed',
+  item: ThreadItem,
+  timestamp: number,
+): StreamEvent[] {
+  const stageLabel = stage === 'started' ? 'Started' : stage === 'updated' ? 'Updated' : 'Completed';
+  const value: any = item;
+
+  switch (item.type) {
+    case 'agent_message': {
+      const raw = extractItemText(value);
+      if (stage !== 'completed') {
+        return [makeStreamEvent('status', `${stageLabel} assistant message`, timestamp)];
+      }
+
+      const message = raw ? raw : 'Assistant emitted an empty message.';
+      return [makeStreamEvent('assistant', message, timestamp)];
+    }
+    case 'reasoning': {
+      const raw = extractItemText(value);
+      if (!raw) {
+        return [makeStreamEvent('reasoning', `${stageLabel} reasoning step`, timestamp)];
+      }
+      const prefix = stage === 'completed' ? '' : `${stageLabel} reasoning step:\n`;
+      return [makeStreamEvent('reasoning', `${prefix}${raw}`, timestamp)];
+    }
+    case 'command_execution': {
+      const command = typeof value?.command === 'string' ? value.command : 'command';
+      const status = typeof value?.status === 'string' ? value.status : 'running';
+      const exitCode = typeof value?.exit_code === 'number' ? ` (exit ${value.exit_code})` : '';
+      const message = stage === 'completed'
+        ? `Command ${command} ${status}${exitCode}`
+        : `${stageLabel} command ${command}`;
+      return [makeStreamEvent('command', message, timestamp)];
+    }
+    case 'file_change': {
+      const changes = Array.isArray(value?.changes) ? value.changes : [];
+      if (!changes.length) {
+        return [makeStreamEvent('file', `${stageLabel} file change`, timestamp)];
+      }
+      return changes.map((change: any) => {
+        const kind = typeof change?.kind === 'string' ? change.kind : 'updated';
+        const path = typeof change?.path === 'string' ? change.path : '(unknown path)';
+        return makeStreamEvent('file', `${stageLabel} file ${kind}: ${path}`, timestamp);
+      });
+    }
+    case 'todo_list': {
+      return [makeStreamEvent('todo', summarizeTodoList(stageLabel, value), timestamp)];
+    }
+    default: {
+      const typeLabel = typeof value?.type === 'string' ? value.type : 'item';
+      return [makeStreamEvent('status', `${stageLabel} ${typeLabel}`, timestamp)];
+    }
+  }
+}
+
+function summarizeTodoList(stageLabel: string, item: any): string {
+  const items = Array.isArray(item?.items) ? item.items : [];
+  if (!items.length) {
+    return `${stageLabel} todo list (empty)`;
+  }
+
+  const lines = items.map((todo: any) => {
+    const symbol = todo?.completed ? '✓' : '□';
+    const text = typeof todo?.text === 'string' ? todo.text : '';
+    return `${symbol} ${text}`.trim();
+  });
+
+  return `${stageLabel} todo list:\n${lines.join('\n')}`;
+}
+
+function extractItemText(item: any): string {
+  if (typeof item?.text === 'string' && item.text.trim().length > 0) {
+    return item.text.trim();
+  }
+
+  if (Array.isArray(item?.content)) {
+    const parts = item.content
+      .map((chunk: any) => (typeof chunk?.text === 'string' ? chunk.text : null))
+      .filter((chunk: string | null): chunk is string => Boolean(chunk));
+    if (parts.length) {
+      return parts.join('\n').trim();
+    }
+  }
+
+  if (item?.json && typeof item.json === 'object') {
+    try {
+      return JSON.stringify(item.json, null, 2);
+    } catch {
+      return '';
+    }
+  }
+
+  return '';
+}
+
+function extractCritiqueFromEvent(event: ThreadEvent): CritiqueResponse | null {
+  if (event.type !== 'item.completed') return null;
+  if (!event.item || event.item.type !== 'agent_message') return null;
+
+  const payload = extractStructuredPayload(event.item);
+  if (!payload) return null;
+  return isCritiqueResponse(payload) ? payload : null;
+}
+
+function extractStructuredPayload(item: ThreadItem): unknown {
+  const value: any = item;
+  if (value?.json && typeof value.json === 'object') {
+    return value.json;
+  }
+
+  if (typeof value?.text === 'string') {
+    const text = value.text.trim();
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function isCritiqueResponse(value: any): value is CritiqueResponse {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return (
+    typeof value.verdict === 'string'
+    && typeof value.why === 'string'
+    && typeof value.alternatives === 'string'
+    && typeof value.questions === 'string'
+    && typeof value.message_for_agent === 'string'
+  );
+}
+
+function makeStreamEvent(tag: StreamEventTag, message: string, timestamp: number): StreamEvent {
+  const normalized = truncateForDisplay(message.replace(/\r\n/g, '\n'));
+  if (!normalized) {
+    return {
+      id: `evt-${timestamp}-${++streamEventCounter}`,
+      timestamp,
+      tag,
+      message: '(no details)',
+    };
+  }
+
+  return {
+    id: `evt-${timestamp}-${++streamEventCounter}`,
+    timestamp,
+    tag,
+    message: normalized,
+  };
+}
+
+function truncateForDisplay(text: string, maxLength = MAX_STREAM_MESSAGE_LENGTH): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, maxLength - 1)}…`;
 }

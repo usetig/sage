@@ -439,7 +439,7 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification'
 **Keyboard Controls**:
 
 - **Session List**: ↑/↓ navigate, Enter select, R refresh
-- **Running Mode**: M manual sync, B back to list, W toggle WHY, C clarification
+- **Running Mode**: Ctrl+O stream overlay, M manual sync, B back to list, W toggle WHY, C clarification
 - **Clarification**: ESC exit, Enter send
 
 **Performance Considerations**:
@@ -1087,6 +1087,16 @@ const terminalWidth = (stdout?.columns ?? 80) - 2;
 - Sage messages: `● {content}`
 
 **Simple Component**: Just displays role and content, no complex logic.
+
+### `src/ui/StreamOverlay.tsx` - Codex Activity Stream Viewer
+
+**Purpose**: Full-screen overlay that surfaces streamed Codex events for the current review. Toggled with `Ctrl+O` while in continuous mode.
+
+**Highlights**:
+
+- Displays timestamped events with color-coded tags for assistant messages, reasoning traces, command executions, file changes, todos, and errors.
+- Updates live during a review and keeps the most recent stream log available after completion.
+- Shows the active session/prompt context plus instructions for exiting (`Ctrl+O` again).
 
 ### `src/ui/Spinner.tsx` - Loading Spinner
 

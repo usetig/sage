@@ -11,6 +11,7 @@ import {
   performIncrementalReview,
   type ReviewResult,
 } from '../lib/review.js';
+import type { StreamEvent } from '../lib/codex.js';
 import { CritiqueCard } from './CritiqueCard.js';
 import { ClarificationCard } from './ClarificationCard.js';
 import { Spinner } from './Spinner.js';
@@ -24,6 +25,7 @@ import {
   type StoredReview,
   type SessionReviewCache,
 } from '../lib/reviewsCache.js';
+import { StreamOverlay } from './StreamOverlay.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
 
@@ -51,6 +53,12 @@ interface ClarificationMessage {
 }
 
 const debugMode = isDebugMode();
+const STREAM_EVENT_HISTORY_LIMIT = 400;
+
+type StreamContext = {
+  sessionId: string;
+  prompt?: string;
+};
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -66,6 +74,11 @@ export default function App() {
   const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
   const [isInitialReview, setIsInitialReview] = useState(false);
   const [manualSyncTriggered, setManualSyncTriggered] = useState(false);
+  const [isStreamOverlayOpen, setIsStreamOverlayOpen] = useState(false);
+  const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
+  const [streamContext, setStreamContext] = useState<StreamContext | null>(null);
+  const [isStreamLive, setIsStreamLive] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
   
   // Clarification mode state
   const [clarificationMessages, setClarificationMessages] = useState<ClarificationMessage[]>([]);
@@ -84,14 +97,26 @@ export default function App() {
   const processedSignalsRef = useRef<Set<string>>(new Set());
   const activeSessionRef = useRef<ActiveSession | null>(null);
   const initialReviewDeferredRef = useRef(false);
+  const streamEventsRef = useRef<StreamEvent[]>([]);
 
   useEffect(() => {
     void reloadSessions();
   }, []);
 
   useInput((input: string, key: Key) => {
+    const normalizedInput = input.toLowerCase();
+
+    if (key.ctrl && normalizedInput === 'o') {
+      if (isStreamOverlayOpen) {
+        setIsStreamOverlayOpen(false);
+      } else if (screen === 'running') {
+        setIsStreamOverlayOpen(true);
+      }
+      return;
+    }
+
     if (screen === 'session-list' && sessions.length) {
-      if (input.toLowerCase() === 'r') {
+      if (normalizedInput === 'r') {
         void reloadSessions();
         return;
       }
@@ -114,7 +139,7 @@ export default function App() {
     }
 
     if (screen === 'running') {
-      const lower = input.toLowerCase();
+      const lower = normalizedInput;
       if (lower === 'b') {
         void handleExitContinuousMode();
         return;
@@ -169,7 +194,7 @@ export default function App() {
       }
     }
 
-    if (screen === 'error' && input.toLowerCase() === 'r') {
+    if (screen === 'error' && normalizedInput === 'r') {
       setError(null);
       void reloadSessions();
       return;
@@ -183,12 +208,43 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (screen !== 'running' && isStreamOverlayOpen) {
+      setIsStreamOverlayOpen(false);
+    }
+  }, [screen, isStreamOverlayOpen]);
+
+  useEffect(() => {
     if (screen !== 'running') return;
     if (!activeSession) return;
     if (workerRunningRef.current) return;
     if (queueRef.current.length === 0) return;
     void processQueue();
   }, [screen, activeSession, queue.length]);
+
+  function beginStream(context: StreamContext): void {
+    streamEventsRef.current = [];
+    setStreamEvents([]);
+    setStreamContext(context);
+    setIsStreamLive(true);
+  }
+
+  function appendStreamEvent(event: StreamEvent): void {
+    streamEventsRef.current = [...streamEventsRef.current, event];
+    if (streamEventsRef.current.length > STREAM_EVENT_HISTORY_LIMIT) {
+      streamEventsRef.current = streamEventsRef.current.slice(-STREAM_EVENT_HISTORY_LIMIT);
+    }
+    setStreamEvents(streamEventsRef.current);
+  }
+
+  function finalizeStream(context: StreamContext, events: StreamEvent[]): void {
+    const trimmed = events.length > STREAM_EVENT_HISTORY_LIMIT
+      ? events.slice(-STREAM_EVENT_HISTORY_LIMIT)
+      : events;
+    streamEventsRef.current = trimmed;
+    setStreamEvents(trimmed);
+    setStreamContext(context);
+    setIsStreamLive(false);
+  }
 
   async function handleSessionSelection(session: ActiveSession) {
     await resetContinuousState();
@@ -218,6 +274,7 @@ export default function App() {
     setActiveSession(session);
     setScreen('running');
     setIsInitialReview(true);
+    beginStream({ sessionId: session.sessionId, prompt: session.title || undefined });
 
     try {
       const lastReviewedUuid = cached?.lastTurnSignature ?? null;
@@ -226,9 +283,19 @@ export default function App() {
       const result = await performInitialReview(
         { sessionId: session.sessionId, transcriptPath: session.transcriptPath, lastReviewedUuid },
         (message) => setCurrentStatusMessage(message),
+        appendStreamEvent,
       );
 
+      const streamPrompt = result.latestPrompt
+        ? getPromptPreview(result.latestPrompt)
+        : session.title || undefined;
+      finalizeStream({ sessionId: session.sessionId, prompt: streamPrompt }, result.streamEvents);
+
       codexThreadRef.current = result.thread;
+      const initialThreadId = result.thread?.id ?? null;
+      if (initialThreadId) {
+        setThreadId(initialThreadId);
+      }
       const deferredInitialReview = result.thread === null && result.isFreshCritique === false;
       initialReviewDeferredRef.current = deferredInitialReview;
 
@@ -264,6 +331,7 @@ export default function App() {
           turnSignature: result.turnSignature,
           session,
           isFreshCritique: result.isFreshCritique,
+          streamEvents: result.streamEvents,
         });
       }
 
@@ -305,6 +373,7 @@ export default function App() {
       const message = err instanceof Error ? err.message : 'Initial review failed. Please try again.';
       setError(message);
       setIsInitialReview(false);
+      setIsStreamLive(false);
       await resetContinuousState();
       setScreen('error');
     }
@@ -416,10 +485,16 @@ export default function App() {
     activeSessionRef.current = null;
     setIsInitialReview(false);
     codexThreadRef.current = null;
+    setThreadId(null);
     lastTurnSignatureRef.current = null;
     reviewCacheRef.current = null;
     processedSignalsRef.current.clear();
     initialReviewDeferredRef.current = false;
+    setIsStreamOverlayOpen(false);
+    setStreamEvents([]);
+    streamEventsRef.current = [];
+    setStreamContext(null);
+    setIsStreamLive(false);
   }
 
   async function cleanupWatcher() {
@@ -529,6 +604,7 @@ export default function App() {
         (!codexThreadRef.current || initialReviewDeferredRef.current) && !debugMode;
 
       if (shouldRunDeferredInitial) {
+        beginStream({ sessionId: job.sessionId, prompt: job.promptPreview });
         try {
           const deferredResult = await performInitialReview(
             {
@@ -537,9 +613,19 @@ export default function App() {
               lastReviewedUuid: lastTurnSignatureRef.current,
             },
             (message) => setCurrentStatusMessage(message),
+            appendStreamEvent,
           );
 
+          const deferredPrompt = deferredResult.latestPrompt
+            ? getPromptPreview(deferredResult.latestPrompt)
+            : job.promptPreview;
+          finalizeStream({ sessionId: job.sessionId, prompt: deferredPrompt }, deferredResult.streamEvents);
+
           codexThreadRef.current = deferredResult.thread;
+          const deferredThreadId = deferredResult.thread?.id ?? null;
+          if (deferredThreadId) {
+            setThreadId(deferredThreadId);
+          }
 
           if (deferredResult.turnSignature) {
             lastTurnSignatureRef.current = deferredResult.turnSignature;
@@ -559,6 +645,7 @@ export default function App() {
               turnSignature: deferredResult.turnSignature,
               session: activeSessionRef.current ?? activeSession,
               isFreshCritique: deferredResult.isFreshCritique,
+              streamEvents: deferredResult.streamEvents,
             });
           }
 
@@ -578,6 +665,7 @@ export default function App() {
           const message = err instanceof Error ? err.message : 'Initial review failed. Please try again.';
           setCurrentStatusMessage(message);
           setStatusMessages((prev) => [...prev, message]);
+          setIsStreamLive(false);
         }
 
         queueRef.current = queueRef.current.slice(1);
@@ -587,6 +675,13 @@ export default function App() {
         continue;
       }
 
+      beginStream({ sessionId: job.sessionId, prompt: job.promptPreview });
+      if (!debugMode) {
+        const currentThreadId = codexThreadRef.current?.id ?? null;
+        if (currentThreadId) {
+          setThreadId(currentThreadId);
+        }
+      }
       try {
         const result = await performIncrementalReview(
           {
@@ -597,7 +692,13 @@ export default function App() {
             latestTurnSignature: job.latestTurnSignature,
           },
           (message) => setCurrentStatusMessage(message),
+          appendStreamEvent,
         );
+
+        const incrementalPrompt = result.latestPrompt
+          ? getPromptPreview(result.latestPrompt)
+          : job.promptPreview;
+        finalizeStream({ sessionId: job.sessionId, prompt: incrementalPrompt }, result.streamEvents);
 
         if (result.turnSignature) {
           lastTurnSignatureRef.current = result.turnSignature;
@@ -612,6 +713,7 @@ export default function App() {
           turnSignature: result.turnSignature,
           session: activeSessionRef.current ?? activeSession,
           isFreshCritique: result.isFreshCritique,
+          streamEvents: result.streamEvents,
         });
 
         try {
@@ -634,6 +736,7 @@ export default function App() {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
         setCurrentStatusMessage(`Review failed: ${message}`);
         setStatusMessages((prev) => [...prev, `Review failed for "${job.promptPreview}": ${message}`]);
+        setIsStreamLive(false);
       }
 
       queueRef.current = queueRef.current.slice(1);
@@ -793,163 +896,181 @@ export default function App() {
         </Text>
       </Box>
 
-      {screen === 'loading' && (
+      {screen === 'running' && (
         <Box marginTop={1}>
-          <Text>Loading sessions…</Text>
+          <Text dimColor>
+            Codex thread: {debugMode ? 'Debug mode (no thread)' : threadId ?? 'Establishing…'}
+          </Text>
         </Box>
       )}
 
-      {screen === 'error' && (
-        <Box marginTop={1} flexDirection="column">
-          <Text color="red">⚠️ {error ?? 'Something went wrong loading sessions.'}</Text>
-          <Box marginTop={1}>
-            <Text dimColor>Press R to retry once issues are fixed.</Text>
-          </Box>
-        </Box>
-      )}
+      {isStreamOverlayOpen ? (
+        <StreamOverlay
+          events={streamEvents}
+          context={streamContext}
+          isLive={isStreamLive}
+        />
+      ) : (
+        <>
+          {screen === 'loading' && (
+            <Box marginTop={1}>
+              <Text>Loading sessions…</Text>
+            </Box>
+          )}
 
-      {screen === 'session-list' && (
-        <Box marginTop={1} flexDirection="column">
-          <Text>Select a Claude session to review:</Text>
-          <Box flexDirection="column" marginTop={1}>
-            {sessions.map((session, index) => (
-              <SessionRow
-                key={`${session.sessionId}-${session.lastUpdated ?? index}`}
-                session={session}
-                index={index}
-                isSelected={index === selectedIndex}
-              />
-            ))}
-          </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh.</Text>
-          </Box>
-        </Box>
-      )}
+          {screen === 'error' && (
+            <Box marginTop={1} flexDirection="column">
+              <Text color="red">⚠️ {error ?? 'Something went wrong loading sessions.'}</Text>
+              <Box marginTop={1}>
+                <Text dimColor>Press R to retry once issues are fixed.</Text>
+              </Box>
+            </Box>
+          )}
+
+          {screen === 'session-list' && (
+            <Box marginTop={1} flexDirection="column">
+              <Text>Select a Claude session to review:</Text>
+              <Box flexDirection="column" marginTop={1}>
+                {sessions.map((session, index) => (
+                  <SessionRow
+                    key={`${session.sessionId}-${session.lastUpdated ?? index}`}
+                    session={session}
+                    index={index}
+                    isSelected={index === selectedIndex}
+                  />
+                ))}
+              </Box>
+              <Box marginTop={1}>
+                <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh.</Text>
+              </Box>
+            </Box>
+          )}
 
       {screen === 'running' && activeSession && (
         <Box marginTop={1} flexDirection="column">
-          {statusMessages.length > 0 && (
-            <Box marginTop={1} flexDirection="column">
-              {statusMessages.map((message, index) => (
-                <Text key={`${message}-${index}`} dimColor>
-                  {message}
-                </Text>
-              ))}
-            </Box>
-          )}
-
-          {reviews.map((item, index) => (
-          <CritiqueCard
-            key={`${item.session.sessionId}-${index}`}
-            critique={item.critique}
-            prompt={item.latestPrompt}
-            index={index + 1}
-            hideWhy={collapsedWhy[index] ?? false}
-          />
-          ))}
-
-          <Box marginTop={1} flexDirection="column">
-            {(() => {
-              const { status, keybindings, isReviewing, statusMessage, queuedItems } = formatStatus(currentJob, queue, isInitialReview, manualSyncTriggered);
-
-              const queueDisplay = queuedItems.length > 0 && (
+              {statusMessages.length > 0 && (
                 <Box marginTop={1} flexDirection="column">
-                  <Text dimColor>Queue:</Text>
-                  {queuedItems.map((item, index) => (
-                    <Text key={`${item.sessionId}-${index}`} dimColor>
-                      {`  ${index + 1}. "${item.promptPreview}"${item.turns.length > 1 ? ` (${item.turns.length} turns)` : ''}`}
+                  {statusMessages.map((message, index) => (
+                    <Text key={`${message}-${index}`} dimColor>
+                      {message}
                     </Text>
                   ))}
                 </Box>
-              );
+              )}
 
-              if (currentStatusMessage) {
-                return (
-                  <>
-                    {currentJob && (
-                      <Text dimColor>
-                        Reviewing response for: "{currentJob.promptPreview}"
-                      </Text>
-                    )}
-                    <Spinner message={currentStatusMessage} />
-                    <Text dimColor>{keybindings}</Text>
-                    {queueDisplay}
-                  </>
-                );
-              }
+              {reviews.map((item, index) => (
+              <CritiqueCard
+                key={`${item.session.sessionId}-${index}`}
+                critique={item.critique}
+                prompt={item.latestPrompt}
+                index={index + 1}
+                hideWhy={collapsedWhy[index] ?? false}
+              />
+              ))}
 
-              if (isReviewing && statusMessage) {
-                return (
-                  <>
-                    <Spinner message={statusMessage} />
-                    <Text dimColor>{keybindings}</Text>
-                    {queueDisplay}
-                  </>
-                );
-              }
+              <Box marginTop={1} flexDirection="column">
+                {(() => {
+                  const { status, keybindings, isReviewing, statusMessage, queuedItems } = formatStatus(currentJob, queue, isInitialReview, manualSyncTriggered);
 
-              return (
-                <>
-                  <Text dimColor>{status}</Text>
-                  <Text dimColor>{keybindings}</Text>
-                  {queueDisplay}
-                </>
-              );
-            })()}
-          </Box>
-        </Box>
-      )}
+                  const queueDisplay = queuedItems.length > 0 && (
+                    <Box marginTop={1} flexDirection="column">
+                      <Text dimColor>Queue:</Text>
+                      {queuedItems.map((item, index) => (
+                        <Text key={`${item.sessionId}-${index}`} dimColor>
+                          {`  ${index + 1}. "${item.promptPreview}"${item.turns.length > 1 ? ` (${item.turns.length} turns)` : ''}`}
+                        </Text>
+                      ))}
+                    </Box>
+                  );
 
-      {screen === 'clarification' && activeClarificationReviewIndex !== null && (
-        <Box marginTop={1} flexDirection="column">
-          <Text>{'─'.repeat(80)}</Text>
-          <Text bold>
-            Chat with Sage
-          </Text>
+                  if (currentStatusMessage) {
+                    return (
+                      <>
+                        {currentJob && (
+                          <Text dimColor>
+                            Reviewing response for: "{currentJob.promptPreview}"
+                          </Text>
+                        )}
+                        <Spinner message={currentStatusMessage} />
+                        <Text dimColor>{keybindings}</Text>
+                        {queueDisplay}
+                      </>
+                    );
+                  }
 
-          <Text>{'─'.repeat(80)}</Text>
+                  if (isReviewing && statusMessage) {
+                    return (
+                      <>
+                        <Spinner message={statusMessage} />
+                        <Text dimColor>{keybindings}</Text>
+                        {queueDisplay}
+                      </>
+                    );
+                  }
 
-          {statusMessages.length > 0 && (
+                  return (
+                    <>
+                      <Text dimColor>{status}</Text>
+                      <Text dimColor>{keybindings}</Text>
+                      {queueDisplay}
+                    </>
+                  );
+                })()}
+              </Box>
+            </Box>
+          )}
+
+          {screen === 'clarification' && activeClarificationReviewIndex !== null && (
             <Box marginTop={1} flexDirection="column">
-              {statusMessages.map((message, index) => (
-                <Text key={`${message}-${index}`} dimColor>
-                  {message}
-                </Text>
-              ))}
-            </Box>
-          )}
-
-          <Box marginTop={1} flexDirection="column">
-            {clarificationMessages
-              .filter((msg) => msg.relatedReviewIndex === activeClarificationReviewIndex)
-              .map((msg, idx) => (
-                <ClarificationCard key={idx} message={msg} />
-              ))}
-          </Box>
-
-          {isWaitingForClarification ? (
-            <Box marginTop={1}>
-              <Spinner message="sage is thinking..." />
-            </Box>
-          ) : (
-            <Box marginTop={1}>
-              <Text>
-                <Text dimColor>&gt; </Text>
-                {clarificationInput}
-                <Text inverse> </Text>
+              <Text>{'─'.repeat(80)}</Text>
+              <Text bold>
+                Chat with Sage
               </Text>
+
+              <Text>{'─'.repeat(80)}</Text>
+
+              {statusMessages.length > 0 && (
+                <Box marginTop={1} flexDirection="column">
+                  {statusMessages.map((message, index) => (
+                    <Text key={`${message}-${index}`} dimColor>
+                      {message}
+                    </Text>
+                  ))}
+                </Box>
+              )}
+
+              <Box marginTop={1} flexDirection="column">
+                {clarificationMessages
+                  .filter((msg) => msg.relatedReviewIndex === activeClarificationReviewIndex)
+                  .map((msg, idx) => (
+                    <ClarificationCard key={idx} message={msg} />
+                  ))}
+              </Box>
+
+              {isWaitingForClarification ? (
+                <Box marginTop={1}>
+                  <Spinner message="sage is thinking..." />
+                </Box>
+              ) : (
+                <Box marginTop={1}>
+                  <Text>
+                    <Text dimColor>&gt; </Text>
+                    {clarificationInput}
+                    <Text inverse> </Text>
+                  </Text>
+                </Box>
+              )}
+
+              <Box marginTop={1}>
+                <Text dimColor>
+                  {isWaitingForClarification
+                    ? '↵ send • ESC exit'
+                    : '↵ send • ESC exit'}
+                </Text>
+              </Box>
             </Box>
           )}
-
-          <Box marginTop={1}>
-            <Text dimColor>
-              {isWaitingForClarification
-                ? '↵ send • ESC exit'
-                : '↵ send • ESC exit'}
-            </Text>
-          </Box>
-        </Box>
+        </>
       )}
     </Box>
   );
@@ -992,6 +1113,7 @@ function toCompletedReview(stored: StoredReview, session: ActiveSession): Comple
     turnSignature: stored.turnSignature,
     session,
     isFreshCritique: true,
+    streamEvents: [],
   };
 }
 
@@ -1026,6 +1148,7 @@ function formatStatus(
 ): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string; queuedItems: ReviewQueueItem[] } {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
   const toggleWhyLabel = 'W to toggle WHY';
+  const streamOverlayLabel = 'Ctrl+O to view stream';
   const queuedItems = currentJob ? queue.slice(1) : queue;
   const pendingCount = queuedItems.length;
 
@@ -1033,7 +1156,7 @@ function formatStatus(
     return {
       status: 'Status: ⏵ Running initial review...',
       statusMessage: 'running initial review...',
-      keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
+      keybindings: `${streamOverlayLabel} • ${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
       queuedItems,
     };
@@ -1048,7 +1171,7 @@ function formatStatus(
     return {
       status: `Status: ⏵ Reviewing response for "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
       statusMessage: `reviewing response for "${currentJob.promptPreview}"${queueSuffix}`,
-      keybindings: `${manualSyncLabel} • ${toggleWhyLabel}`,
+      keybindings: `${streamOverlayLabel} • ${manualSyncLabel} • ${toggleWhyLabel}`,
       isReviewing: true,
       queuedItems,
     };
@@ -1056,7 +1179,7 @@ function formatStatus(
 
   return {
     status: 'Status: ⏺ Waiting for Claude response',
-    keybindings: `C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`,
+    keybindings: `${streamOverlayLabel} • C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`,
     isReviewing: false,
     queuedItems,
   };

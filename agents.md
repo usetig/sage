@@ -118,6 +118,7 @@ This document gives any coding agent the context it needs to contribute safely a
 7. Keyboard controls in continuous mode:
    - `M` to rescan signal files (useful if a hook ran while Sage was closed)
    - `B` to exit and return to session picker
+   - `Ctrl+O` to toggle the Codex activity stream overlay
 
 ---
 
