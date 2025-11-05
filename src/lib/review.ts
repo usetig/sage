@@ -168,7 +168,7 @@ export async function performInitialReview(
     const newTurns = turns.slice(lastReviewedTurnCount);
 
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
+      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
     });
 
     const reviewPromise = runFollowupReview(
@@ -186,7 +186,7 @@ export async function performInitialReview(
     onProgress?.('analyzing codebase context...');
 
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
+      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
     });
 
     const reviewPromise = runInitialReview(
@@ -302,7 +302,7 @@ export async function performIncrementalReview(
   onProgress?.('Sage is thinking...');
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Codex review timed out after 10 minutes')), 5 * 60 * 1000);
+    setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
   });
 
   const { critique, streamEvents } = await Promise.race([
