@@ -97,6 +97,13 @@ Each review includes:
 - **Alternatives**: Suggested alternative approaches (if applicable)
 - **Questions**: Clarification questions for you (if applicable)
 
+## Documentation
+
+- **[Architecture Guide](documentation/CODEBASE_GUIDE.md)** - Comprehensive technical reference
+- **[Contributing](agents.md)** - Guidelines for contributors and AI agents
+- **[Debug Mode](documentation/debug-mode.md)** - Testing without Codex API calls
+- **[Troubleshooting](documentation/thread-persistence.md)** - Advanced state management
+
 ## Keyboard Controls
 
 ### Session Picker

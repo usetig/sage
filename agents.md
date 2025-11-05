@@ -31,7 +31,7 @@ This document gives any coding agent the context it needs to contribute safely a
 ```
 ┌─ Initial Setup ─────────────────────────────────────────┐
 │ Hook installer (src/scripts/configureHooks.ts)          │
-│    └ registers SessionStart/End/Stop/UserPromptSubmit   │
+│    └ registers SessionStart/Stop/UserPromptSubmit       │
 │                                                          │
 │ Hook shim (src/hooks/sageHook.ts)                       │
 │    └ writes .sage/runtime/sessions/*.json               │
@@ -67,7 +67,7 @@ This document gives any coding agent the context it needs to contribute safely a
 
 **Key modules and responsibilities:**
 
-- `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/End/Stop/UserPromptSubmit). Writes per-session metadata to `.sage/runtime/sessions/` and queues review signals in `.sage/runtime/needs-review/`.
+- `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/Stop/UserPromptSubmit). Writes per-session metadata to `.sage/runtime/sessions/` and queues review signals in `.sage/runtime/needs-review/`. Note: SessionEnd hook was removed due to unreliability.
 - `src/scripts/configureHooks.ts` — CLI helper (`npm run configure-hooks`) that installs the Sage hook command into `.claude/settings.local.json`.
 - `src/lib/jsonl.ts` — Streams Claude JSONL transcripts, filters warmups/compactions, and extracts user⇄assistant turns.
 - `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and manages debug artifacts.
