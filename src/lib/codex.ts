@@ -402,13 +402,19 @@ function convertThreadEventToStreamEvents(event: ThreadEvent): StreamEvent[] {
       return describeItemEvent('completed', event.item, timestamp);
     case 'turn.completed': {
       const usage = event.usage ?? {};
-      const parts = [
-        'Turn completed',
-        typeof usage.input_tokens === 'number' ? `input ${usage.input_tokens}` : null,
-        typeof usage.cached_input_tokens === 'number' ? `cached ${usage.cached_input_tokens}` : null,
-        typeof usage.output_tokens === 'number' ? `output ${usage.output_tokens}` : null,
-      ].filter(Boolean);
-      return [makeStreamEvent('status', parts.join(' • '), timestamp)];
+      const inputTokens = usage.input_tokens ?? 0;
+      const cachedTokens = usage.cached_input_tokens ?? 0;
+      const outputTokens = usage.output_tokens ?? 0;
+
+      // Calculate effective tokens: new input + (cached * 0.1) + output
+      const newInputTokens = inputTokens - cachedTokens;
+      const effectiveTokens = Math.round(newInputTokens + (cachedTokens * 0.1) + outputTokens);
+
+      const message = effectiveTokens > 0
+        ? `Turn completed • ${effectiveTokens.toLocaleString()} tokens used`
+        : 'Turn completed';
+
+      return [makeStreamEvent('status', message, timestamp)];
     }
     case 'turn.failed': {
       const message = event.error?.message ?? 'Codex turn failed';
