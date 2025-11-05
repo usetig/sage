@@ -330,7 +330,18 @@ async function executeStreamedTurn(
   const collected: StreamEvent[] = [];
   let critique: CritiqueResponse | null = null;
 
-  for await (const event of events) {
+  const iterator = events[Symbol.asyncIterator]() as AsyncIterator<ThreadEvent>;
+  let sawTerminalEvent = false;
+
+  // Iterate manually so we can break/close when the turn finishes.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { value, done } = await iterator.next();
+    if (done) {
+      break;
+    }
+
+    const event = value as ThreadEvent;
     const derived = convertThreadEventToStreamEvents(event);
     if (derived.length) {
       for (const entry of derived) {
@@ -345,8 +356,16 @@ async function executeStreamedTurn(
     }
 
     if (event.type === 'turn.failed') {
+      sawTerminalEvent = true;
+      await closeIterator(iterator);
       const errorMessage = event.error?.message ?? 'Codex turn failed';
       throw new Error(errorMessage);
+    }
+
+    if (event.type === 'turn.completed') {
+      sawTerminalEvent = true;
+      await closeIterator(iterator);
+      break;
     }
   }
 
@@ -354,7 +373,21 @@ async function executeStreamedTurn(
     throw new Error('Codex returned no structured critique.');
   }
 
+  if (!sawTerminalEvent) {
+    collected.push(makeStreamEvent('status', 'Stream ended unexpectedly without a terminal event.', Date.now()));
+  }
+
   return { critique, events: collected };
+}
+
+async function closeIterator(iterator: AsyncIterator<ThreadEvent>): Promise<void> {
+  if (typeof iterator.return === 'function') {
+    try {
+      await iterator.return();
+    } catch {
+      // Iterator may already be closed; ignore errors.
+    }
+  }
 }
 
 function convertThreadEventToStreamEvents(event: ThreadEvent): StreamEvent[] {
