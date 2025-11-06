@@ -4,7 +4,7 @@ Sage keeps a lightweight, read-only record of every critique so reopening the TU
 
 ## Storage layout
 
-- All cached reviews live under `.sage/reviews/`.
+- All cached reviews live under `~/.sage/{project-path}/reviews/`.
 - Each Claude session gets its own JSON file named `<sessionId>.json`.
 
 ```jsonc

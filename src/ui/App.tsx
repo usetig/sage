@@ -26,6 +26,7 @@ import {
   type SessionReviewCache,
 } from '../lib/reviewsCache.js';
 import { StreamOverlay } from './StreamOverlay.js';
+import { getQueueDir } from '../lib/paths.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
 
@@ -751,7 +752,7 @@ export default function App() {
   async function initializeSignalWatcher(session: ActiveSession) {
     await cleanupWatcher();
 
-    const needsReviewDir = path.join(process.cwd(), '.sage', 'runtime', 'needs-review');
+    const needsReviewDir = getQueueDir();
     const watcher = chokidar.watch(needsReviewDir, { ignoreInitial: true, depth: 0 });
     watcher.on('add', (filePath) => {
       if (!processedSignalsRef.current.has(filePath)) {
@@ -764,7 +765,7 @@ export default function App() {
   }
 
   async function drainSignals(sessionId: string) {
-    const needsReviewDir = path.join(process.cwd(), '.sage', 'runtime', 'needs-review');
+    const needsReviewDir = getQueueDir();
     let files: string[] = [];
     try {
       files = await fs.readdir(needsReviewDir);

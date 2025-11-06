@@ -13,23 +13,24 @@ When you select a session for review, Sage creates a **Codex thread** that maint
 3. Incremental reviews only send new turns to Codex (not the entire history)
 
 This persistence happens in two places:
-- **`.sage/threads/{sessionId}.json`** — Codex thread metadata (this doc)
-- **`.sage/reviews/{sessionId}.json`** — Completed critique history (see `review-cache.md`)
+- **`~/.sage/{project-path}/threads/{sessionId}.json`** — Codex thread metadata (this doc)
+- **`~/.sage/{project-path}/reviews/{sessionId}.json`** — Completed critique history (see `review-cache.md`)
 
 ---
 
 ## Storage Location
 
-**Directory:** `.sage/threads/`
+**Directory:** `~/.sage/{project-path}/threads/`
 
 **File naming:** One JSON file per Claude Code session: `{sessionId}.json`
 
 **Example:**
 ```
-.sage/
-└── threads/
-    ├── abc123-session-id.json
-    └── xyz789-session-id.json
+~/.sage/
+└── Users-you-projects-myapp/
+    └── threads/
+        ├── abc123-session-id.json
+        └── xyz789-session-id.json
 ```
 
 ---
@@ -219,7 +220,7 @@ This prevents duplicate critique cards when resuming unchanged threads.
 
 Once the initial review completes, Sage enters **continuous mode**:
 
-1. A chokidar watcher listens to `.sage/runtime/needs-review/` for new signal files (one per `Stop` hook).
+1. A chokidar watcher listens to `~/.sage/{project-path}/runtime/needs-review/` for new signal files (one per `Stop` hook).
 2. Each signal is processed by re-reading the transcript with `extractTurns({ sinceUuid })`, which slices away previously reviewed turns using assistant UUIDs.
 3. Non-empty results enqueue an incremental review job and include the originating signal path so it can be deleted on success.
 4. `performIncrementalReview()` runs on the existing Codex thread, appends the critique, and updates the cache; failures leave the signal file in place for retry.
@@ -297,7 +298,7 @@ Running multiple Sage instances on the same session can cause race conditions:
 **Cause:** Bug in `isFreshCritique` handling (should be fixed in v1.0+).
 
 **Fix:**
-1. Delete `.sage/reviews/{sessionId}.json`
+1. Delete `~/.sage/{project-path}/reviews/{sessionId}.json`
 2. Exit and re-select session
 
 ### Thread Seems Out of Sync
@@ -307,7 +308,7 @@ Running multiple Sage instances on the same session can cause race conditions:
 - Codex doesn't have context from previous reviews
 
 **Fix:**
-1. Delete `.sage/threads/{sessionId}.json`
+1. Delete `~/.sage/{project-path}/threads/{sessionId}.json`
 2. Exit and re-select session (will create fresh thread)
 
 ### Clear All Thread State
@@ -315,9 +316,11 @@ Running multiple Sage instances on the same session can cause race conditions:
 To reset everything and start fresh:
 
 ```bash
-rm -rf .sage/threads/
-rm -rf .sage/reviews/
+rm -rf ~/.sage/Users-you-projects-myapp/threads/
+rm -rf ~/.sage/Users-you-projects-myapp/reviews/
 ```
+
+(Replace `Users-you-projects-myapp` with your encoded project path)
 
 Then restart Sage. All sessions will start with new threads.
 

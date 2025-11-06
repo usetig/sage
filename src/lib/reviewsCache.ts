@@ -1,6 +1,7 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import type { CritiqueResponse } from './codex.js';
+import { getReviewsDir } from './paths.js';
 
 export interface StoredReview {
   turnSignature: string;
@@ -17,7 +18,7 @@ export interface SessionReviewCache {
   reviews: StoredReview[];
 }
 
-const REVIEWS_DIR = path.join(process.cwd(), '.sage', 'reviews');
+const REVIEWS_DIR = getReviewsDir();
 
 const MAX_REVIEWS_PER_SESSION = 500;
 

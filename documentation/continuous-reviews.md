@@ -8,18 +8,18 @@ This guide documents the current continuous-review implementation that rides on 
 
 1. **Hook emits metadata**
    - Claude Code fires `SessionStart`, `UserPromptSubmit`, and `Stop`.
-   - `src/hooks/sageHook.ts` writes `.sage/runtime/sessions/{sessionId}.json` (metadata) and, on `Stop`, drops a signal file in `.sage/runtime/needs-review/{sessionId}` containing `{ sessionId, transcriptPath, queuedAt }`.
+   - `src/hooks/sageHook.ts` writes `~/.sage/{project-path}/runtime/sessions/{sessionId}.json` (metadata) and, on `Stop`, drops a signal file in `~/.sage/{project-path}/runtime/needs-review/{sessionId}` containing `{ sessionId, transcriptPath, queuedAt }`.
 
 2. **Session selection**  
    - `App.tsx` calls `listActiveSessions()` which loads the metadata files, verifies the transcript still exists, streams the first user entry to filter warmups, and surfaces sessions ordered by `lastUpdated`.
 
-3. **Initial review**  
-   - Selecting a session triggers `performInitialReview({ transcriptPath, lastReviewedUuid })`.  
-   - `extractTurns()` reads the JSONL transcript, skipping `isSidechain`, `isMeta`, and `isCompactSummary` records, and returns ordered turn pairs plus the latest assistant UUID.  
-   - The Codex thread is created or resumed, a critique is returned (or skipped if nothing changed), and `.sage/reviews/{sessionId}.json` is hydrated to restore past critiques.
+3. **Initial review**
+   - Selecting a session triggers `performInitialReview({ transcriptPath, lastReviewedUuid })`.
+   - `extractTurns()` reads the JSONL transcript, skipping `isSidechain`, `isMeta`, and `isCompactSummary` records, and returns ordered turn pairs plus the latest assistant UUID.
+   - The Codex thread is created or resumed, a critique is returned (or skipped if nothing changed), and `~/.sage/{project-path}/reviews/{sessionId}.json` is hydrated to restore past critiques.
 
-4. **Signal watcher**  
-   - After the initial pass, Sage starts a chokidar watcher on `.sage/runtime/needs-review/` **before** draining any backlog to avoid races.  
+4. **Signal watcher**
+   - After the initial pass, Sage starts a chokidar watcher on `~/.sage/{project-path}/runtime/needs-review/` **before** draining any backlog to avoid races.
    - `drainSignals()` processes existing signal files so missed turns while Sage was offline are handled immediately.
 
 5. **Queueing new work**  
@@ -37,7 +37,7 @@ This guide documents the current continuous-review implementation that rides on 
 
 | Location | Responsibility |
 | --- | --- |
-| `src/hooks/sageHook.ts` | Validate hook payloads, maintain per-session metadata, and emit review signals. All writes are atomic and errors are logged to `.sage/runtime/hook-errors.log`. Note: SessionEnd hook removed due to unreliability; metadata files persist. |
+| `src/hooks/sageHook.ts` | Validate hook payloads, maintain per-session metadata, and emit review signals. All writes are atomic and errors are logged to `~/.sage/{project-path}/runtime/hook-errors.log`. Note: SessionEnd hook removed due to unreliability; metadata files persist. |
 | `src/lib/jsonl.ts` | List active sessions, detect warmups, and stream transcripts into `TurnSummary[]` collections while skipping compaction noise. |
 | `src/lib/review.ts` | Drive initial and follow-up Codex prompts, manage thread persistence, and hand back `turnSignature` values (assistant UUIDs) for cache dedupe. |
 | `src/ui/App.tsx` | Orchestrate the TUI, signal watcher, queue, Codex thread lifecycle, clarification mode, and persistence of review history. |
@@ -56,10 +56,10 @@ This guide documents the current continuous-review implementation that rides on 
 
 ## UI & Hotkeys
 
-- `Ctrl+O` — Toggle the live Codex activity stream overlay.  
-- `B` — Exit continuous mode and return to the session list.  
-- `M` — Manually rescan `.sage/runtime/needs-review/` (useful after resolving hook issues or when running in debug mode).  
-- `W` — Toggle the WHY section for approved critiques (collapses/expands in batch).  
+- `Ctrl+O` — Toggle the live Codex activity stream overlay.
+- `B` — Exit continuous mode and return to the session list.
+- `M` — Manually rescan `~/.sage/{project-path}/runtime/needs-review/` (useful after resolving hook issues or when running in debug mode).
+- `W` — Toggle the WHY section for approved critiques (collapses/expands in batch).
 - `C` — Enter clarification mode for the latest critique (see `documentation/specs/interactive-followup-design.md`).
 
 Status messaging reflects the current stage (initial review, incremental review, waiting, debug mode). When debug mode is active the status banner and critique cards explicitly mention it and link to the artifact path.
@@ -68,9 +68,9 @@ Status messaging reflects the current stage (initial review, incremental review,
 
 ## Failure & Recovery
 
-- **Missing transcript** — If hook metadata points to a deleted transcript, `processSignalFile()` logs a warning, removes the signal, and clears the session entry on the next refresh.  
+- **Missing transcript** — If hook metadata points to a deleted transcript, `processSignalFile()` logs a warning, removes the signal, and clears the session entry on the next refresh.
 - **Codex error** — Queue item stays at the head, status logs "Review failed …". Clearing the error (e.g., restarting Codex) and pressing `M` replays the signal.
-- **Hook writer errors** — Logged to `.sage/runtime/hook-errors.log`; signals are not emitted. Fix the hook (often missing `cwd`/`transcript_path`) and re-run the prompt to regenerate a signal.
+- **Hook writer errors** — Logged to `~/.sage/{project-path}/runtime/hook-errors.log`; signals are not emitted. Fix the hook (often missing `cwd`/`transcript_path`) and re-run the prompt to regenerate a signal.
 - **Stale sessions** — Metadata files persist even after Claude sessions close. Old sessions remain visible in the picker but are sorted by recency (least recent at bottom).
 
 ---

@@ -16,11 +16,11 @@ This document gives any coding agent the context it needs to contribute safely a
 
 | Area | Status |
 | --- | --- |
-| **Session Discovery** | Lists sessions from hook-emitted metadata in `.sage/runtime/sessions/`. Automatically filters warmup-only stubs. |
+| **Session Discovery** | Lists sessions from hook-emitted metadata in `~/.sage/{project-path}/runtime/sessions/`. Automatically filters warmup-only stubs. |
 | **UI** | Ink TUI (`src/ui/App.tsx`) with structured critique cards, queue display, and real-time status. Shows project name in header. |
-| **Export** | Claude hooks write per-session metadata and review signals into `.sage/runtime/` (no external CLI required). |
+| **Export** | Claude hooks write per-session metadata and review signals into `~/.sage/{project-path}/runtime/` (no external CLI required). |
 | **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/jsonl.ts` parses Claude JSONL logs (primary turns only). Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
-| **Continuous Mode** | After initial review, Sage watches `.sage/runtime/needs-review/` for hook signals and enqueues reviews (FIFO). |
+| **Continuous Mode** | After initial review, Sage watches `~/.sage/{project-path}/runtime/needs-review/` for hook signals and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
 | **Debug Mode** | Prompts/context are always archived under `.debug/`. Set `SAGE_DEBUG=1` to bypass Codex calls and emit mock critiques. |
 
@@ -34,7 +34,7 @@ This document gives any coding agent the context it needs to contribute safely a
 │    └ registers SessionStart/Stop/UserPromptSubmit       │
 │                                                          │
 │ Hook shim (src/hooks/sageHook.ts)                       │
-│    └ writes .sage/runtime/sessions/*.json               │
+│    └ writes ~/.sage/{project-path}/runtime/sessions/*.json │
 │                                                          │
 │ Session picker (src/ui/App.tsx)                         │
 │    └ user selects session                               │
@@ -46,7 +46,7 @@ This document gives any coding agent the context it needs to contribute safely a
 ┌─ Continuous Mode (after initial review) ────────────────┐
 │ User prompts Claude → Stop hook fires                    │
 │    ↓                                                     │
-│ Hook shim writes .sage/runtime/needs-review/{sessionId} │
+│ Hook shim writes ~/.sage/{project-path}/runtime/needs-review/{sessionId} │
 │    ↓                                                     │
 │ App.tsx watcher notices new signal                      │
 │    ↓                                                     │
@@ -67,7 +67,7 @@ This document gives any coding agent the context it needs to contribute safely a
 
 **Key modules and responsibilities:**
 
-- `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/Stop/UserPromptSubmit). Writes per-session metadata to `.sage/runtime/sessions/` and queues review signals in `.sage/runtime/needs-review/`. Note: SessionEnd hook was removed due to unreliability.
+- `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/Stop/UserPromptSubmit). Writes per-session metadata to `~/.sage/{project-path}/runtime/sessions/` and queues review signals in `~/.sage/{project-path}/runtime/needs-review/`. Note: SessionEnd hook was removed due to unreliability.
 - `src/scripts/configureHooks.ts` — CLI helper (`npm run configure-hooks`) that installs the Sage hook command into `.claude/settings.local.json`.
 - `src/lib/jsonl.ts` — Streams Claude JSONL transcripts, filters warmups/compactions, and extracts user⇄assistant turns.
 - `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and manages debug artifacts.
@@ -100,11 +100,11 @@ This document gives any coding agent the context it needs to contribute safely a
 3. Sage shows an Ink TUI with session picker:
    - Arrow keys to navigate sessions.
    - `Enter` to select a session for review.
-   - `R` to refresh session list (re-read `.sage/runtime/sessions/` metadata).
+   - `R` to refresh session list (re-read `~/.sage/{project-path}/runtime/sessions/` metadata).
 4. After selection, Sage performs initial review and enters continuous mode:
    - Status line shows `⏵ Running initial review...` during setup
-   - Confirms Claude hooks are writing metadata to `.sage/runtime/`
-   - Starts watching `.sage/runtime/needs-review/` for new signals
+   - Confirms Claude hooks are writing metadata to `~/.sage/{project-path}/runtime/`
+   - Starts watching `~/.sage/{project-path}/runtime/needs-review/` for new signals
 5. As you continue with Claude Code, Sage automatically reviews new turns:
    - New turns are queued (FIFO) and displayed with prompt previews
    - Status shows `⏵ Reviewing "..."` with queue count
@@ -145,7 +145,7 @@ This document gives any coding agent the context it needs to contribute safely a
 ## 8. Known Limitations & TODOs
 
 - **Resume chains:** Sage relies on cached assistant UUIDs to skip duplicated turns when Claude creates a new transcript on resume. More robust cross-file stitching is still future work.
-- **Thread persistence:** ✅ Sage now saves Codex thread metadata to `.sage/threads/` and automatically resumes threads when re-selecting sessions. The `isFreshCritique` flag prevents duplicate critiques when resuming unchanged threads. This enables context preservation across Sage restarts and faster incremental reviews. See `documentation/thread-persistence.md` for details.
+- **Thread persistence:** ✅ Sage now saves Codex thread metadata to `~/.sage/{project-path}/threads/` and automatically resumes threads when re-selecting sessions. The `isFreshCritique` flag prevents duplicate critiques when resuming unchanged threads. This enables context preservation across Sage restarts and faster incremental reviews. See `documentation/thread-persistence.md` for details.
 - **Incomplete responses on manual selection:** If you select a session while Claude is still typing, the initial review may process a partial response and potentially fail or produce inaccurate critique. Continuous mode is unaffected since the Stop hook only fires after Claude completes. Workaround: Wait for Claude to finish before selecting the session in Sage, or let continuous mode catch the complete response once it arrives.
 - **Critique history navigation:** Reviews stack vertically for scrollback but no arrow-key navigation within the UI. Users scroll their terminal to see previous reviews.
 - **Read-only enforcement:** Codex threads currently rely on context instructions; explicit permission settings (if supported by the SDK) would enhance safety.

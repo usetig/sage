@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
+import { getSessionsDir } from './paths.js';
 
 export interface SessionMetadata {
   sessionId: string;
@@ -33,8 +34,7 @@ export interface TurnSummary {
   assistantUuid?: string;
 }
 
-const RUNTIME_DIR = path.join(process.cwd(), '.sage', 'runtime');
-const SESSIONS_DIR = path.join(RUNTIME_DIR, 'sessions');
+const SESSIONS_DIR = getSessionsDir();
 
 function readJson(filePath: string): SessionMetadata | null {
   try {

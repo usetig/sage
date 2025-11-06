@@ -1,6 +1,12 @@
 /* eslint-disable no-console */
 import fs from 'fs';
 import path from 'path';
+import {
+  getRuntimeDir,
+  getSessionsDir,
+  getQueueDir,
+  getErrorLogPath,
+} from '../lib/paths.js';
 
 interface HookPayload {
   session_id?: string;
@@ -10,14 +16,10 @@ interface HookPayload {
   prompt?: string;
 }
 
-const projectRoot = process.env.CLAUDE_PROJECT_DIR
-  ? path.resolve(process.env.CLAUDE_PROJECT_DIR)
-  : process.cwd();
-
-const RUNTIME_DIR = path.join(projectRoot, '.sage', 'runtime');
-const SESSIONS_DIR = path.join(RUNTIME_DIR, 'sessions');
-const QUEUE_DIR = path.join(RUNTIME_DIR, 'needs-review');
-const ERROR_LOG = path.join(RUNTIME_DIR, 'hook-errors.log');
+const RUNTIME_DIR = getRuntimeDir();
+const SESSIONS_DIR = getSessionsDir();
+const QUEUE_DIR = getQueueDir();
+const ERROR_LOG = getErrorLogPath();
 
 function ensureRuntimeDirs(): void {
   for (const dir of [RUNTIME_DIR, SESSIONS_DIR, QUEUE_DIR]) {

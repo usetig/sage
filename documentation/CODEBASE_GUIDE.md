@@ -75,10 +75,10 @@ Sage solves this by integrating seamlessly into the workflow with zero additiona
                               │
                               │ Writes metadata & signals
                               ▼
-        ┌──────────────────────────────────────┐
-        │    .sage/runtime/sessions/*.json     │
-        │    .sage/runtime/needs-review/*.json │
-        └──────────────────────────────────────┘
+        ┌────────────────────────────────────────────────────┐
+        │    ~/.sage/{project-path}/runtime/sessions/*.json     │
+        │    ~/.sage/{project-path}/runtime/needs-review/*.json │
+        └────────────────────────────────────────────────────┘
                               │
                               │ Reads & watches
                               ▼
@@ -768,7 +768,7 @@ export async function saveThreadMetadata(
 }
 ```
 
-**Storage**: `.sage/threads/{sessionId}.json`
+**Storage**: `~/.sage/{project-path}/threads/{sessionId}.json`
 
 2. **`loadThreadMetadata()`** (lines 67-83)
 
@@ -803,7 +803,7 @@ export async function saveThreadMetadata(
 
 **Purpose**: Stores critique history so Sage can restore previous critiques when re-selecting sessions.
 
-**Storage**: `.sage/reviews/{sessionId}.json`
+**Storage**: `~/.sage/{project-path}/reviews/{sessionId}.json`
 
 **Key Functions**:
 
@@ -917,7 +917,7 @@ interface HookPayload {
 
 **Output**:
 
-1. **Session Metadata** (`.sage/runtime/sessions/{sessionId}.json`):
+1. **Session Metadata** (`~/.sage/{project-path}/runtime/sessions/{sessionId}.json`):
 
 ```json
 {
@@ -930,7 +930,7 @@ interface HookPayload {
 }
 ```
 
-2. **Review Signal** (`.sage/runtime/needs-review/{sessionId}-{timestamp}-{random}.json`):
+2. **Review Signal** (`~/.sage/{project-path}/runtime/needs-review/{sessionId}-{timestamp}-{random}.json`):
 
 ```json
 {
@@ -977,7 +977,7 @@ async function writeFileAtomic(filePath: string, contents: string): Promise<void
 
 **Error Handling** (`appendError()`, lines 59-66):
 
-- Writes errors to `.sage/runtime/hook-errors.log`
+- Writes errors to `~/.sage/{project-path}/runtime/hook-errors.log`
 - Best-effort (doesn't throw if logging fails)
 - Includes timestamps
 
@@ -1542,15 +1542,17 @@ const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
 
 **Runtime Directories**:
 
-- `.sage/runtime/sessions/`: Session metadata
-- `.sage/runtime/needs-review/`: Review signals
-- `.sage/threads/`: Thread metadata
-- `.sage/reviews/`: Review cache
-- `.debug/`: Debug artifacts
+Each project gets its own directory under `~/.sage/` based on its full path (e.g., `/Users/you/projects/foo` → `~/.sage/Users-you-projects-foo/`):
+
+- `~/.sage/{project-path}/runtime/sessions/`: Session metadata
+- `~/.sage/{project-path}/runtime/needs-review/`: Review signals
+- `~/.sage/{project-path}/threads/`: Thread metadata
+- `~/.sage/{project-path}/reviews/`: Review cache
+- `.debug/`: Debug artifacts (local to project)
 
 **All Created Automatically**: No manual setup required.
 
-**Git Ignore**: `.sage/` and `.debug/` should be in `.gitignore`.
+**Git Ignore**: `.debug/` should be in `.gitignore` (`.sage/` is now global, not in project)
 
 ---
 

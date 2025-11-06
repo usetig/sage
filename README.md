@@ -79,7 +79,7 @@ Before installing Sage, ensure you have:
 
 ### First Run Setup
 On launch, Sage automatically:
-1. Ensures runtime directories exist under `.sage/runtime/`
+1. Ensures runtime directories exist under `~/.sage/{project-path}/runtime/`
 2. Reads active session metadata captured by the Claude hooks
 3. Displays an interactive session picker
 
@@ -149,9 +149,15 @@ sage/
 │       └── configureHooks.ts
 │       ├── App.tsx           # Main TUI orchestrator
 │       └── CritiqueCard.tsx  # Critique renderer
-├── .sage/                     # Runtime state (sessions, reviews)
 ├── .debug/                    # Debug artifacts (when SAGE_DEBUG=1)
 └── documentation/             # Reference docs
+
+Runtime state (sessions, threads, reviews) is stored globally:
+~/.sage/
+└── {encoded-project-path}/    # e.g., Users-you-projects-myapp/
+    ├── runtime/
+    ├── threads/
+    └── reviews/
 ```
 
 ## Troubleshooting
@@ -159,14 +165,14 @@ sage/
 ### No sessions appear in picker
 - Verify you've used Claude Code in this repository before
 - Run `npm run configure-hooks` to ensure Claude hooks are installed
-- Check that `.sage/runtime/sessions/` contains metadata files
+- Check that `~/.sage/{project-path}/runtime/sessions/` contains metadata files
 - Press `R` to refresh the session list in Sage
 
 ### Reviews aren't triggering automatically
-- Confirm `.claude/settings.local.json` contains Sage’s hook command
-- Inspect `.sage/runtime/needs-review/` for pending signal files
+- Confirm `.claude/settings.local.json` contains Sage's hook command
+- Inspect `~/.sage/{project-path}/runtime/needs-review/` for pending signal files
 - Use the `M` key to rescan signals manually
-- Check `.sage/runtime/hook-errors.log` for hook execution errors
+- Check `~/.sage/{project-path}/runtime/hook-errors.log` for hook execution errors
 
 ### Codex connection errors
 - Verify your Codex SDK credentials are configured
@@ -181,7 +187,7 @@ git init
 
 ## Known Limitations
 
-- **Single-instance assumption** — Running multiple Sage processes against the same repository can race on `.sage/history/`, `.sage/threads/`, or the new review cache. Keep one instance active per repo to avoid desynchronised queues or duplicate critiques.
+- **Single-instance assumption** — Running multiple Sage processes against the same repository can race on `~/.sage/{project-path}/` state files. Keep one instance active per repo to avoid desynchronised queues or duplicate critiques.
 - **Incomplete responses on manual selection** — If you select a session while Claude is still typing, the initial review may fail or produce inaccurate critique. Wait for Claude to finish its response before selecting the session. Continuous mode is unaffected and works correctly.
 
 ## Configuration
@@ -199,14 +205,23 @@ Run `npm run configure-hooks` whenever you clone Sage into a new project. This c
 }
 ```
 
-Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `.sage/runtime/`.
+Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `~/.sage/{project-path}/runtime/`.
 
 ### Directory Structure
-- `.sage/runtime/sessions/` - Active-session metadata captured from hooks
-- `.sage/runtime/needs-review/` - Signal files that queue critiques
-- `.sage/threads/` - Codex thread metadata for resumption (auto-generated)
-- `.sage/reviews/` - Cached critique history (auto-generated)
-- `.debug/` - Debug artifacts when `SAGE_DEBUG=1` (auto-generated)
+
+**Global Sage Directory** (`~/.sage/`):
+
+Each project gets its own subdirectory based on its full path (e.g., `/Users/you/projects/myapp` → `~/.sage/Users-you-projects-myapp/`):
+
+- `~/.sage/{project-path}/runtime/sessions/` - Active-session metadata captured from hooks
+- `~/.sage/{project-path}/runtime/needs-review/` - Signal files that queue critiques
+- `~/.sage/{project-path}/runtime/hook-errors.log` - Hook execution error log
+- `~/.sage/{project-path}/threads/` - Codex thread metadata for resumption (auto-generated)
+- `~/.sage/{project-path}/reviews/` - Cached critique history (auto-generated)
+
+**Local Project Files**:
+
+- `.debug/` - Debug artifacts when `SAGE_DEBUG=1` (auto-generated, local to project)
 - `.claude/settings.local.json` - Claude Code hooks (auto-configured)
 
 ## Development

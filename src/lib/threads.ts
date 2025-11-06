@@ -3,6 +3,7 @@ import path from 'path';
 import type { Thread } from '@openai/codex-sdk';
 import { Codex } from '@openai/codex-sdk';
 import { getConfiguredThreadOptions } from './codex.js';
+import { getThreadsDir } from './paths.js';
 
 interface ThreadMetadata {
   threadId: string;
@@ -12,7 +13,7 @@ interface ThreadMetadata {
   lastReviewedTurnCount: number; // Track how many turns were last reviewed
 }
 
-const THREADS_DIR = '.sage/threads';
+const THREADS_DIR = getThreadsDir();
 
 /**
  * Ensures the threads directory exists

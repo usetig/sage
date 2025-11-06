@@ -65,7 +65,7 @@ Open the file to see the precise payload Sage sent (or would have sent) to Codex
 
 - **Artifacts are always created:** As of recent updates, debug artifacts are written for every review, not just in debug mode. This lets you inspect Codex prompts even during normal operation.
 - Debug mode does **not** simulate Codex reasoning; it only confirms the scaffolding around prompt generation and queue handling.
-- Continuous mode still processes hook-emitted signals in `.sage/runtime/needs-review/`, so you can confirm watcher behaviour and queue draining without hitting external services.
+- Continuous mode still processes hook-emitted signals in `~/.sage/{project-path}/runtime/needs-review/`, so you can confirm watcher behaviour and queue draining without hitting external services.
 - Because critiques in debug mode always return "Approved", downstream tooling should treat debug runs as non-authoritative.
 
 Use debug mode to iterate faster when Codex isn't available, then disable it to validate Sage's real review pipeline. Use the artifact files in either mode to inspect the exact prompts and context being sent to Codex.
