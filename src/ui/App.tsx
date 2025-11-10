@@ -13,7 +13,7 @@ import {
 } from '../lib/review.js';
 import type { StreamEvent } from '../lib/codex.js';
 import { CritiqueCard } from './CritiqueCard.js';
-import { ClarificationCard } from './ClarificationCard.js';
+import { ChatCard } from './ChatCard.js';
 import { Spinner } from './Spinner.js';
 import { isDebugMode } from '../lib/debug.js';
 import {
@@ -28,7 +28,7 @@ import {
 import { StreamOverlay } from './StreamOverlay.js';
 import { getQueueDir } from '../lib/paths.js';
 
-type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
+type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 
 const repositoryPath = path.resolve(process.cwd());
 
@@ -46,7 +46,7 @@ interface ReviewQueueItem {
   signalPath: string;
 }
 
-interface ClarificationMessage {
+interface ChatMessage {
   role: 'sage' | 'user';
   content: string;
   timestamp: Date;
@@ -81,11 +81,11 @@ export default function App() {
   const [isStreamLive, setIsStreamLive] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   
-  // Clarification mode state
-  const [clarificationMessages, setClarificationMessages] = useState<ClarificationMessage[]>([]);
-  const [clarificationInput, setClarificationInput] = useState('');
-  const [activeClarificationReviewIndex, setActiveClarificationReviewIndex] = useState<number | null>(null);
-  const [isWaitingForClarification, setIsWaitingForClarification] = useState(false);
+  // Chat mode state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [activeChatReviewIndex, setActiveChatReviewIndex] = useState<number | null>(null);
+  const [isWaitingForChat, setIsWaitingForChat] = useState(false);
 
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
@@ -154,43 +154,43 @@ export default function App() {
         return;
       }
       if (lower === 'c') {
-        // Enter clarification mode for the most recent review
+        // Enter chat mode for the most recent review
         const latestIndex = reviews.length - 1;
         if (latestIndex >= 0) {
-          setActiveClarificationReviewIndex(latestIndex);
-          setScreen('clarification');
+          setActiveChatReviewIndex(latestIndex);
+          setScreen('chat');
           return;
         }
       }
     }
 
-    if (screen === 'clarification') {
-      if (key.escape && !isWaitingForClarification) {
+    if (screen === 'chat') {
+      if (key.escape && !isWaitingForChat) {
         setScreen('running');
-        setActiveClarificationReviewIndex(null);
-        setClarificationInput('');
+        setActiveChatReviewIndex(null);
+        setChatInput('');
         setCurrentStatusMessage(null);
         return;
       }
 
-      if (key.return && clarificationInput.trim() && !isWaitingForClarification) {
-        void handleClarificationSubmit(clarificationInput.trim());
-        setClarificationInput('');
+      if (key.return && chatInput.trim() && !isWaitingForChat) {
+        void handleChatSubmit(chatInput.trim());
+        setChatInput('');
         return;
       }
 
       // Don't allow input modifications while waiting for response
-      if (isWaitingForClarification) {
+      if (isWaitingForChat) {
         return;
       }
 
       if (key.backspace || key.delete) {
-        setClarificationInput((prev) => prev.slice(0, -1));
+        setChatInput((prev) => prev.slice(0, -1));
         return;
       }
 
       if (input && !key.ctrl && !key.meta) {
-        setClarificationInput((prev) => prev + input);
+        setChatInput((prev) => prev + input);
         return;
       }
     }
@@ -411,56 +411,56 @@ export default function App() {
     }
   }
 
-  async function handleClarificationSubmit(question: string) {
+  async function handleChatSubmit(question: string) {
     if (!codexThreadRef.current && !debugMode) {
-      setCurrentStatusMessage('No active Codex thread for clarification.');
+      setCurrentStatusMessage('No active Codex thread for chat.');
       return;
     }
 
-    if (activeClarificationReviewIndex === null) return;
-    if (isWaitingForClarification) return; // Prevent duplicate submissions
+    if (activeChatReviewIndex === null) return;
+    if (isWaitingForChat) return; // Prevent duplicate submissions
 
     // Set waiting state to block further inputs
-    setIsWaitingForClarification(true);
+    setIsWaitingForChat(true);
 
-    // Add user question to clarification history
-    setClarificationMessages((prev) => [
+    // Add user question to chat history
+    setChatMessages((prev) => [
       ...prev,
       {
         role: 'user',
         content: question,
         timestamp: new Date(),
-        relatedReviewIndex: activeClarificationReviewIndex,
+        relatedReviewIndex: activeChatReviewIndex,
       },
     ]);
 
 
     try {
-      const { clarifyReview } = await import('../lib/review.js');
-      const { response } = await clarifyReview(
+      const { chatWithSage } = await import('../lib/review.js');
+      const { response } = await chatWithSage(
         codexThreadRef.current,
         question,
         activeSession!.sessionId,
       );
 
-      // Add Sage's explanation to clarification history
-      setClarificationMessages((prev) => [
+      // Add Sage's response to chat history
+      setChatMessages((prev) => [
         ...prev,
         {
           role: 'sage',
           content: response,
           timestamp: new Date(),
-          relatedReviewIndex: activeClarificationReviewIndex,
+          relatedReviewIndex: activeChatReviewIndex,
         },
       ]);
 
       setCurrentStatusMessage(null);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Clarification failed';
-      setCurrentStatusMessage(`Clarification error: ${errorMsg}`);
+      const errorMsg = err instanceof Error ? err.message : 'Chat failed';
+      setCurrentStatusMessage(`Chat error: ${errorMsg}`);
     } finally {
       // Always clear waiting state when done
-      setIsWaitingForClarification(false);
+      setIsWaitingForChat(false);
     }
   }
 
@@ -1021,7 +1021,7 @@ export default function App() {
             </Box>
           )}
 
-          {screen === 'clarification' && activeClarificationReviewIndex !== null && (
+          {screen === 'chat' && activeChatReviewIndex !== null && (
             <Box marginTop={1} flexDirection="column">
               <Text>{'─'.repeat(80)}</Text>
               <Text bold>
@@ -1041,14 +1041,14 @@ export default function App() {
               )}
 
               <Box marginTop={1} flexDirection="column">
-                {clarificationMessages
-                  .filter((msg) => msg.relatedReviewIndex === activeClarificationReviewIndex)
+                {chatMessages
+                  .filter((msg) => msg.relatedReviewIndex === activeChatReviewIndex)
                   .map((msg, idx) => (
-                    <ClarificationCard key={idx} message={msg} />
+                    <ChatCard key={idx} message={msg} />
                   ))}
               </Box>
 
-              {isWaitingForClarification ? (
+              {isWaitingForChat ? (
                 <Box marginTop={1}>
                   <Spinner message="sage is thinking..." />
                 </Box>
@@ -1056,7 +1056,7 @@ export default function App() {
                 <Box marginTop={1}>
                   <Text>
                     <Text dimColor>&gt; </Text>
-                    {clarificationInput}
+                    {chatInput}
                     <Text inverse> </Text>
                   </Text>
                 </Box>
@@ -1064,7 +1064,7 @@ export default function App() {
 
               <Box marginTop={1}>
                 <Text dimColor>
-                  {isWaitingForClarification
+                  {isWaitingForChat
                     ? '↵ send • ESC exit'
                     : '↵ send • ESC exit'}
                 </Text>

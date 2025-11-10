@@ -157,7 +157,6 @@ export function buildInitialPromptPayload(
     '1. Explore the codebase - Read relevant files to understand the architecture, patterns, and context',
     '2. Review the conversation - Focus on the most recent turns if the conversation is long',
     '3. Critique the latest Claude turn - Evaluate only the most recent response for issues',
-    '4. Verify alignment - Check if Claude addressed what the user actually asked for',
     '',
     '# Conversation Transcript Details',
     'The conversation transcript below shows only the PRIMARY user-Claude exchanges.',

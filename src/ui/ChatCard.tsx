@@ -1,18 +1,18 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-interface ClarificationMessage {
+interface ChatMessage {
   role: 'sage' | 'user';
   content: string;
   timestamp: Date;
   relatedReviewIndex?: number;
 }
 
-interface ClarificationCardProps {
-  message: ClarificationMessage;
+interface ChatCardProps {
+  message: ChatMessage;
 }
 
-export function ClarificationCard({ message }: ClarificationCardProps) {
+export function ChatCard({ message }: ChatCardProps) {
   const isUser = message.role === 'user';
   const prefix = isUser ? '>' : '●';
 

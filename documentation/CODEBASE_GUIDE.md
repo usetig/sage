@@ -110,7 +110,7 @@ Sage solves this by integrating seamlessly into the workflow with zero additiona
 1. **Singleton Pattern**: Codex instance (`codexInstance` in `codex.ts`)
 2. **Observer Pattern**: File watcher (chokidar) observes signal directory
 3. **Queue Pattern**: FIFO queue for pending reviews
-4. **State Machine**: Screen transitions (`loading` → `session-list` → `running` → `clarification`)
+4. **State Machine**: Screen transitions (`loading` → `session-list` → `running` → `chat`)
 5. **Factory Pattern**: Thread creation/resumption (`getOrCreateThread`)
 6. **Strategy Pattern**: Different prompt builders for initial vs. incremental reviews
 7. **Cache Pattern**: Review history persistence (`reviewsCache.ts`)
@@ -369,7 +369,7 @@ const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
 const [reviews, setReviews] = useState<CompletedReview[]>([]);
 const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
 const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
-const [clarificationMessages, setClarificationMessages] = useState<ClarificationMessage[]>([]);
+const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 ```
 
 **Refs (for values that shouldn't trigger re-renders)**:
@@ -418,29 +418,29 @@ const processedSignalsRef = useRef<Set<string>>(new Set());
    - Enqueues job if new turns exist
    - Deduplicates signals using `processedSignalsRef`
 
-5. **`handleClarificationSubmit()`** (lines 338-389)
-   - Handles user questions about critiques
-   - Calls `clarifyReview()` with Codex thread
-   - Adds messages to clarification history
-   - Prevents duplicate submissions with `isWaitingForClarification`
+5. **`handleChatSubmit()`** (lines 338-389)
+   - Handles user questions to Sage
+   - Calls `chatWithSage()` with Codex thread
+   - Adds messages to chat history
+   - Prevents duplicate submissions with `isWaitingForChat`
 
 **Screen State Machine**:
 
 ```typescript
-type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'clarification';
+type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 ```
 
 - `loading`: Initial session discovery
 - `error`: Error state (can retry with 'R')
 - `session-list`: Session picker (arrow keys + Enter)
 - `running`: Continuous review mode (watching for signals)
-- `clarification`: Chat mode with Sage (press 'C' in running mode)
+- `chat`: Chat mode with Sage (press 'C' in running mode)
 
 **Keyboard Controls**:
 
 - **Session List**: ↑/↓ navigate, Enter select, R refresh
-- **Running Mode**: Ctrl+O stream overlay, M manual sync, B back to list, W toggle WHY, C clarification
-- **Clarification**: ESC exit, Enter send
+- **Running Mode**: Ctrl+O stream overlay, M manual sync, B back to list, W toggle WHY, C chat
+- **Chat**: ESC exit, Enter send
 
 **Performance Considerations**:
 
@@ -737,7 +737,7 @@ if (isResumedThread && !hasNewTurns) {
 
 **Key Constraint**: "If they ask you to suggest fixes or write code, politely remind them: 'That's outside my scope as a reviewer.'"
 
-**Why?**: Sage is read-only. Clarification should explain reasoning, not propose solutions.
+**Why?**: Sage is read-only and should focus on helping the developer understand the codebase and critique.
 
 ### `src/lib/threads.ts` - Thread Persistence
 
@@ -1077,9 +1077,9 @@ const terminalWidth = (stdout?.columns ?? 80) - 2;
 - Truncates to 60 chars by default
 - Adds ellipsis
 
-### `src/ui/ClarificationCard.tsx` - Clarification Message Renderer
+### `src/ui/ChatCard.tsx` - Chat Message Renderer
 
-**Purpose**: Renders user questions and Sage responses in clarification mode.
+**Purpose**: Renders user questions and Sage responses in chat mode.
 
 **Visual Design**:
 
@@ -1430,7 +1430,7 @@ const result = await Promise.race([reviewPromise, timeoutPromise]);
 **Timeouts**:
 - Initial review: 5 minutes
 - Incremental review: 5 minutes
-- Clarification: 2 minutes
+- Chat: 2 minutes
 
 **Why?**: Codex reviews can hang; timeouts prevent indefinite blocking.
 
@@ -1716,7 +1716,7 @@ await appendError(`Hook error: ${error instanceof Error ? error.message : String
 
 1. **Multi-Instance Support**: File locking or database for shared state
 2. **Streaming Reviews**: Review as Claude types (partial critiques)
-3. **Rich Followups**: More interactive clarification mode
+3. **Rich Followups**: More interactive chat mode with history navigation
 4. **Review Filtering**: Filter critiques by verdict, date, etc.
 5. **Export Critiques**: Save critiques to markdown/files
 6. **Thread Sharing**: Share Codex threads across sessions (if same codebase)
@@ -1741,7 +1741,7 @@ Sage is a well-architected code reviewer that integrates seamlessly into the Cla
 - **Persistent state**: Threads and reviews survive restarts
 - **Graceful error handling**: Continues operating despite failures
 - **Clean separation**: UI, business logic, and integrations are separated
-- **Extensible**: Easy to add new features (clarification mode, caching, etc.)
+- **Extensible**: Easy to add new features (chat mode, caching, etc.)
 
 The codebase demonstrates:
 - Strong TypeScript usage

@@ -40,7 +40,7 @@ This guide documents the current continuous-review implementation that rides on 
 | `src/hooks/sageHook.ts` | Validate hook payloads, maintain per-session metadata, and emit review signals. All writes are atomic and errors are logged to `~/.sage/{project-path}/runtime/hook-errors.log`. Note: SessionEnd hook removed due to unreliability; metadata files persist. |
 | `src/lib/jsonl.ts` | List active sessions, detect warmups, and stream transcripts into `TurnSummary[]` collections while skipping compaction noise. |
 | `src/lib/review.ts` | Drive initial and follow-up Codex prompts, manage thread persistence, and hand back `turnSignature` values (assistant UUIDs) for cache dedupe. |
-| `src/ui/App.tsx` | Orchestrate the TUI, signal watcher, queue, Codex thread lifecycle, clarification mode, and persistence of review history. |
+| `src/ui/App.tsx` | Orchestrate the TUI, signal watcher, queue, Codex thread lifecycle, chat mode, and persistence of review history. |
 | `src/lib/reviewsCache.ts` | Persist completed critiques and the latest assistant UUID, trimming history after 500 entries. |
 
 ---
@@ -60,7 +60,7 @@ This guide documents the current continuous-review implementation that rides on 
 - `B` — Exit continuous mode and return to the session list.
 - `M` — Manually rescan `~/.sage/{project-path}/runtime/needs-review/` (useful after resolving hook issues or when running in debug mode).
 - `W` — Toggle the WHY section for approved critiques (collapses/expands in batch).
-- `C` — Enter clarification mode for the latest critique (see `documentation/specs/interactive-followup-design.md`).
+- `C` — Enter chat mode to ask Sage questions about your codebase or the latest critique (see `documentation/specs/interactive-followup-design.md`).
 
 Status messaging reflects the current stage (initial review, incremental review, waiting, debug mode). When debug mode is active the status banner and critique cards explicitly mention it and link to the artifact path.
 

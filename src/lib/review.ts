@@ -345,7 +345,7 @@ function makeDebugStreamEvent(message: string): StreamEvent {
   };
 }
 
-export async function clarifyReview(
+export async function chatWithSage(
   thread: Thread | null,
   userQuestion: string,
   sessionId: string,
@@ -355,61 +355,31 @@ export async function clarifyReview(
   if (debug) {
     return {
       response: [
-        'Debug mode active — Codex clarification skipped.',
+        'Debug mode active — Codex chat skipped.',
         `Session ID: ${sessionId}`,
         '',
         'Your question:',
         userQuestion,
         '',
-        'In a real run, Sage would explain its reasoning here.',
+        'In a real run, Sage would respond to your question here.',
       ].join('\n'),
     };
   }
 
   if (!thread) {
-    throw new Error('No active Codex thread for clarification.');
+    throw new Error('No active Codex thread for chat.');
   }
 
-  const prompt = [
-    '# Developer Question About Your Critique',
-    userQuestion,
-    '',
-    '# CRITICAL CONSTRAINTS',
-    'Your role is EXPLANATION ONLY. You must:',
-    '- Explain your reasoning and what you meant',
-    '- Point to specific code locations or patterns',
-    '- Clarify why you reached your verdict',
-    '- Help the developer understand your review',
-    '',
-    'You must NEVER:',
-    '- Suggest implementations or fixes',
-    '- Write code or propose alternatives',
-    '- Act as a collaborator or implementer',
-    '- Step outside your \"reviewer explaining their review\" role',
-    '',
-    '# Instructions',
-    'The developer is asking you to clarify your critique. Help them understand:',
-    '- What specific code/pattern you were referring to',
-    '- Why you flagged it (correctness, consistency, risk, etc.)',
-    '- What about the codebase context informed your view',
-    '',
-    'IMPORTANT: Be concise. Reference files you already read in the initial review.',
-    'Do NOT re-read files unless absolutely necessary to answer the question.',
-    '',
-    'If they ask you to suggest fixes or write code, politely remind them:',
-    '\"That\'s outside my scope as a reviewer. I can only explain my critique.',
-    'For implementation help, ask your main coding agent (Claude, etc.).\"',
-    '',
-    '# Response Format',
-    'Respond conversationally but stay focused on EXPLAINING, not IMPLEMENTING.',
-  ].join('\n');
+  const prompt = `You are now chatting directly with the developer. Respond conversationally - you don't need to follow the structured output schema from your reviews.
+
+${userQuestion}`;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Clarification timed out after 2 minutes')), 2 * 60 * 1000);
+    setTimeout(() => reject(new Error('Chat timed out after 2 minutes')), 2 * 60 * 1000);
   });
 
-  const clarificationPromise = thread.run(prompt);
-  const turn = await Promise.race([clarificationPromise, timeoutPromise]);
+  const chatPromise = thread.run(prompt);
+  const turn = await Promise.race([chatPromise, timeoutPromise]);
 
   return { response: turn.finalResponse as string };
 }

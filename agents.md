@@ -72,7 +72,7 @@ This document gives any coding agent the context it needs to contribute safely a
 - `src/lib/jsonl.ts` — Streams Claude JSONL transcripts, filters warmups/compactions, and extracts user⇄assistant turns.
 - `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and manages debug artifacts.
 - `src/lib/codex.ts` — Codex SDK wrapper with JSON schema for structured output. Builds initial and follow-up prompts, manages thread lifecycle.
-- `src/ui/App.tsx` — Main TUI orchestrator. Manages session picker, signal watcher (chokidar), FIFO queue, continuous review state, and clarification threads.
+- `src/ui/App.tsx` — Main TUI orchestrator. Manages session picker, signal watcher (chokidar), FIFO queue, continuous review state, and chat threads.
 - `src/ui/CritiqueCard.tsx` — Structured critique renderer with symbol-coded verdicts and color-coded sections.
 
 ---
