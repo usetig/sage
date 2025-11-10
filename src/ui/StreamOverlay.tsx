@@ -29,7 +29,7 @@ export function StreamOverlay({ events, context, isLive }: StreamOverlayProps) {
     <Box marginTop={1} flexDirection="column">
       <Text>{'─'.repeat(80)}</Text>
       <Text bold color="cyan">
-        Codex Activity Stream
+        Sage Activity Stream
       </Text>
       {context && (
         <Text dimColor>
