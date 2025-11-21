@@ -189,6 +189,7 @@ git init
 
 - **Single-instance assumption** — Running multiple Sage processes against the same repository can race on `~/.sage/{project-path}/` state files. Keep one instance active per repo to avoid desynchronised queues or duplicate critiques.
 - **Incomplete responses on manual selection** — If you select a session while Claude is still typing, the initial review may fail or produce inaccurate critique. Wait for Claude to finish its response before selecting the session. Continuous mode is unaffected and works correctly.
+- **iTerm2 Flickering** — Users may experience flickering when using iTerm2 due to its handling of rapid screen updates. This is a known issue with the underlying Ink library and iTerm2. Using the default macOS Terminal or VS Code's integrated terminal is recommended if this persists.
 
 ## Configuration
 
