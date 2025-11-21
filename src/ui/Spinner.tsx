@@ -13,7 +13,7 @@ export const Spinner: React.FC<SpinnerProps> = ({ message }) => {
   useEffect(() => {
     const timer = setInterval(() => {
       setFrame((prevFrame) => (prevFrame + 1) % SPINNER_FRAMES.length);
-    }, 250);
+    }, 100);
 
     return () => {
       clearInterval(timer);
