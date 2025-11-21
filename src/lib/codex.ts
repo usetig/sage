@@ -46,7 +46,7 @@ const singleton = new Codex();
 export const codexInstance = singleton;
 
 const DEFAULT_THREAD_OPTIONS: ThreadOptions = (() => {
-  const model = "gpt-5-nano"; // process.env.SAGE_CODEX_MODEL?.trim();
+  const model = "gpt-5-codex"; // process.env.SAGE_CODEX_MODEL?.trim();
   if (model) {
     return { model };
   }
@@ -190,6 +190,10 @@ export function buildInitialPromptPayload(
     '- Be concise but specific - cite files/functions when relevant',
     '- Admit uncertainty when needed',
     '- If you must contrast Claude and the developer, make the subject explicit (e.g., "Claude\'s draft uses X, but your app uses Y").',
+    '- Do NOT critique the *state* of the conversation (e.g., "discussion is at design level") unless it prevents progress.',
+    '- Do NOT suggest obvious process steps (e.g., "write tests", "create plan") unless the user explicitly asked for a final implementation.',
+    '- If the user asks for a high-level summary, do not critique missing low-level details.',
+    '- Avoid nitpicking: Do not flag minor issues, stylistic choices, or missing optional details unless they cause actual bugs.',
     '',
     `Session ID: ${sessionId}`,
     latestTurnSection,
@@ -269,6 +273,10 @@ export function buildFollowupPromptPayload(
     '- Be concise but specific - cite files/functions when relevant',
     '- Admit uncertainty when needed',
     '- Clearly distinguish Claude’s work from the developer’s (e.g., "Claude claims…" / "Your project…").',
+    '- Do NOT critique the *state* of the conversation (e.g., "discussion is at design level") unless it prevents progress.',
+    '- Do NOT suggest obvious process steps (e.g., "write tests", "create plan") unless the user explicitly asked for a final implementation.',
+    '- If the user asks for a high-level summary, do not critique missing low-level details.',
+    '- Avoid nitpicking: Do not flag minor issues, stylistic choices, or missing optional details unless they cause actual bugs.',
     '',
     `Session ID: ${sessionId}`,
     'New Claude turn(s) follow between <new_turns> tags.',
