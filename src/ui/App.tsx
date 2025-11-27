@@ -27,6 +27,7 @@ import {
 } from '../lib/reviewsCache.js';
 import { StreamOverlay } from './StreamOverlay.js';
 import { getQueueDir } from '../lib/paths.js';
+import { ensureHooksConfigured } from '../scripts/configureHooks.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 
@@ -90,6 +91,10 @@ export default function App() {
   const [activeChatReviewIndex, setActiveChatReviewIndex] = useState<number | null>(null);
   const [isWaitingForChat, setIsWaitingForChat] = useState(false);
 
+  // Hook configuration state
+  const [hooksJustConfigured, setHooksJustConfigured] = useState(false);
+  const [hookConfigWarning, setHookConfigWarning] = useState<string | null>(null);
+
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
   const watcherRef = useRef<FSWatcher | null>(null);
@@ -104,7 +109,22 @@ export default function App() {
   const streamEventsRef = useRef<StreamEvent[]>([]);
 
   useEffect(() => {
-    void reloadSessions();
+    const init = async () => {
+      // Configure hooks first (non-blocking on failure)
+      try {
+        const result = await ensureHooksConfigured();
+        if (result.configured && !result.alreadyConfigured) {
+          setHooksJustConfigured(true);
+        }
+      } catch (err) {
+        // Log but don't block app startup - hooks can be configured manually
+        console.error('Failed to auto-configure hooks:', err);
+        setHookConfigWarning('Could not auto-configure hooks. Run: npm run configure-hooks');
+      }
+      // Always load sessions regardless of hook config result
+      await reloadSessions();
+    };
+    void init();
   }, []);
 
   useInput((input: string, key: Key) => {
@@ -987,6 +1007,12 @@ export default function App() {
 
           {screen === 'session-list' && (
             <Box marginTop={1} flexDirection="column">
+              {hooksJustConfigured && (
+                <Text color="green">✓ Hooks configured</Text>
+              )}
+              {hookConfigWarning && (
+                <Text color="yellow">⚠ {hookConfigWarning}</Text>
+              )}
               <Text>Select a Claude session to review:</Text>
               <Box flexDirection="column" marginTop={1}>
                 {sessions.map((session, index) => (

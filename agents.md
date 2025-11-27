@@ -7,7 +7,7 @@ This document gives any coding agent the context it needs to contribute safely a
 ## 1. Project Intent
 
 - **Problem Statement:** Developers rely on Claude Code as their primary assistant, but they often want an automated second opinion. Manually copying conversations into another LLM breaks flow and loses repo context. Sage steps in as a **passive reviewer**: it mirrors a Claude session, reads the same repo, and produces critique cards without user intervention.
-- **End Goal (v0):** Let the user run `sage`, pick a Claude session, and receive a Codex-powered critique of that session’s latest turn. Reviews must be read-only, grounded in the repo, and require zero extra commands in the developer workflow.
+- **End Goal (v0):** Let the user run `sage`, pick a Claude session, and receive a Codex-powered critique of that session's latest turn. Reviews must be read-only, grounded in the repo, and require zero extra commands in the developer workflow. Hooks are auto-configured on first run.
 - **Future direction:** Continuous hooks (streaming reviews as new turns arrive), richer follow-up conversations with Sage, and smarter resume handling across session forks.
 
 ---
@@ -68,7 +68,7 @@ This document gives any coding agent the context it needs to contribute safely a
 **Key modules and responsibilities:**
 
 - `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/Stop/UserPromptSubmit). Writes per-session metadata to `~/.sage/{project-path}/runtime/sessions/` and queues review signals in `~/.sage/{project-path}/runtime/needs-review/`. Note: SessionEnd hook was removed due to unreliability.
-- `src/scripts/configureHooks.ts` — CLI helper (`npm run configure-hooks`) that installs the Sage hook command into `.claude/settings.local.json`.
+- `src/scripts/configureHooks.ts` — Hook configuration module that auto-installs Sage hooks on startup. Also available as CLI helper (`npm run configure-hooks`). Uses absolute paths to Sage's compiled hook script (`dist/hooks/sageHook.js`) to work correctly when Sage is installed globally via npm.
 - `src/lib/jsonl.ts` — Streams Claude JSONL transcripts, filters warmups/compactions, and extracts user⇄assistant turns.
 - `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and manages debug artifacts.
 - `src/lib/codex.ts` — Codex SDK wrapper with JSON schema for structured output. Builds initial and follow-up prompts, manages thread lifecycle.
@@ -96,26 +96,27 @@ This document gives any coding agent the context it needs to contribute safely a
 ## 6. Running Sage (developer workflow)
 
 1. Ensure Claude Code and the Codex agent are running locally.
-2. From the repo root, run `npm start` (or `tsx src/index.tsx`).
-3. Sage shows an Ink TUI with session picker:
+2. From any project directory, run `sage` (if installed globally) or `npm start` from the Sage repo.
+3. **First run:** Sage automatically configures Claude hooks in `.claude/settings.local.json`. You'll see "✓ Hooks configured" in the session list. If auto-configuration fails, a warning appears with manual setup instructions.
+4. Sage shows an Ink TUI with session picker:
    - Arrow keys to navigate sessions.
    - `Enter` to select a session for review.
    - `R` to refresh session list (re-read `~/.sage/{project-path}/runtime/sessions/` metadata).
-4. After selection, Sage performs initial review and enters continuous mode:
+5. After selection, Sage performs initial review and enters continuous mode:
    - Status line shows `⏵ Running initial review...` during setup
    - Confirms Claude hooks are writing metadata to `~/.sage/{project-path}/runtime/`
    - Starts watching `~/.sage/{project-path}/runtime/needs-review/` for new signals
-5. As you continue with Claude Code, Sage automatically reviews new turns:
+6. As you continue with Claude Code, Sage automatically reviews new turns:
    - New turns are queued (FIFO) and displayed with prompt previews
    - Status shows `⏵ Reviewing "..."` with queue count
    - Completed critiques stack vertically (scroll terminal to see history)
-6. Each critique card displays:
+7. Each critique card displays:
    - Symbol-coded verdict: ✓ Approved | ⚠ Concerns | ✗ Critical Issues
    - WHY section (color-coded: green/yellow/red)
    - ALTERNATIVES section (if applicable)
    - QUESTIONS section (if applicable)
    - MESSAGE FOR CLAUDE CODE AGENT section (only for Concerns/Critical Issues verdicts, when Sage has specific guidance for Claude)
-7. Keyboard controls in continuous mode:
+8. Keyboard controls in continuous mode:
    - `M` to rescan signal files (useful if a hook ran while Sage was closed)
    - `B` to exit and return to session picker
    - `Ctrl+O` to toggle the Codex activity stream overlay
@@ -161,7 +162,8 @@ This document gives any coding agent the context it needs to contribute safely a
 | Start Sage TUI | `npm start` or `tsx src/index.tsx` |
 | TypeScript build check | `npm run build` |
 | Session discovery & listing | `src/lib/jsonl.ts` |
-| Hook auto-installation | `src/scripts/configureHooks.ts` |
+| Hook auto-configuration | `src/scripts/configureHooks.ts` (runs automatically on startup) |
+| Manual hook setup | `npm run configure-hooks` |
 | Codex prompt builder & schemas | `src/lib/codex.ts` |
 | Review orchestration | `src/lib/review.ts` |
 | Critique card component | `src/ui/CritiqueCard.tsx` |

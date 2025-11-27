@@ -293,7 +293,11 @@ index.tsx
   ↓
 App.tsx (mount)
   ↓
-useEffect → reloadSessions()
+useEffect → init()
+  ↓
+ensureHooksConfigured()  // Auto-configure Claude hooks
+  ↓
+reloadSessions()
   ↓
 listActiveSessions()
   ↓
@@ -301,7 +305,7 @@ Read .sage/runtime/sessions/*.json
   ↓
 Filter warmup sessions
   ↓
-Display session picker
+Display session picker (with "✓ Hooks configured" if first run)
 ```
 
 ### Session Selection Flow
@@ -991,13 +995,15 @@ const projectRoot = process.env.CLAUDE_PROJECT_DIR
 
 **Why?**: Claude Code sets `CLAUDE_PROJECT_DIR` to the project root, not the Sage repo root.
 
-### `src/scripts/configureHooks.ts` - Hook Installer
+### `src/scripts/configureHooks.ts` - Hook Auto-Configuration
 
-**Purpose**: CLI script that installs Sage hooks into Claude Code's settings.
+**Purpose**: Automatically configures Sage hooks on startup. Also available as CLI script.
 
-**Command**: `npm run configure-hooks`
+**Automatic**: Called during App initialization (`App.tsx` useEffect)
 
-**Target File**: `.claude/settings.local.json`
+**Manual Command**: `npm run configure-hooks`
+
+**Target File**: `.claude/settings.local.json` (in the project directory)
 
 **Hook Configuration**:
 
@@ -1007,7 +1013,7 @@ const projectRoot = process.env.CLAUDE_PROJECT_DIR
     "SessionStart": [{
       "hooks": [{
         "type": "command",
-        "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"",
+        "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"",
         "timeout": 30
       }]
     }],
@@ -1017,22 +1023,50 @@ const projectRoot = process.env.CLAUDE_PROJECT_DIR
 }
 ```
 
-**Algorithm** (`ensureHooks()`, lines 8-52):
+**Key Design Decisions**:
+
+1. **Absolute Path**: Uses absolute path to Sage's compiled hook script (`dist/hooks/sageHook.js`), computed at runtime from `import.meta.url`. This ensures hooks work regardless of where Sage is installed (local dev, npm global, etc.).
+
+2. **Compiled JS**: Points to `dist/hooks/sageHook.js` (not `src/`), so it works with npm packages (which only include `dist/`).
+
+3. **Node instead of tsx**: Uses `node` directly for faster hook execution (no TypeScript compilation overhead).
+
+**Exported Function**:
+
+```typescript
+export interface HookConfigResult {
+  configured: boolean;
+  alreadyConfigured: boolean;
+}
+
+export async function ensureHooksConfigured(): Promise<HookConfigResult>
+```
+
+**Algorithm** (`ensureHooksConfigured()`):
 
 ```
-1. Read existing settings.local.json (or create empty object)
-2. Ensure hooks object exists
-3. For each target event:
+1. Compute SAGE_ROOT from import.meta.url (works for both dev and npm install)
+2. Read existing settings.local.json (or create empty object)
+3. Ensure hooks object exists
+4. For each target event:
    a. Get existing hooks array (or empty array)
-   b. Check if Sage command already exists
+   b. Find any existing Sage hook (by checking for "sageHook.ts" in command)
    c. If not present:
       → Append Sage hook entry
-4. Write updated settings file
+      → Set anyAdded = true
+   d. If present but wrong path:
+      → Update to correct path
+      → Set anyAdded = true
+5. Write updated settings file
+6. Return { configured: true, alreadyConfigured: !anyAdded }
 ```
 
-**Deduplication**: Checks if Sage command already exists before adding (prevents duplicates on re-run).
+**Features**:
 
-**Why `$CLAUDE_PROJECT_DIR`?**: Claude Code expands this variable to the project root, not the Sage repo root.
+- **Auto-update**: If an old/broken Sage hook exists, updates it to the correct path
+- **Deduplication**: Detects existing Sage hooks by looking for "sageHook" in command
+- **Non-destructive**: Preserves other hooks configured by the user
+- **Graceful errors**: Failures are caught in App.tsx and shown as warnings (non-blocking)
 
 ### `src/ui/CritiqueCard.tsx` - Critique Renderer
 
@@ -1497,8 +1531,9 @@ function normalizeCache(raw: Partial<SessionReviewCache> | null, sessionId: stri
 **Hook Registration** (`configureHooks.ts`):
 
 - Writes to `.claude/settings.local.json`
-- Command: `npx tsx "$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts"`
+- Command: `node "/absolute/path/to/sage/dist/hooks/sageHook.js"`
 - Events: `SessionStart`, `Stop`, `UserPromptSubmit`
+- **Auto-configured**: Runs automatically on Sage startup (no manual setup needed)
 
 **Hook Execution** (`sageHook.ts`):
 

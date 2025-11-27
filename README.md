@@ -57,12 +57,7 @@ Before installing Sage, ensure you have:
    cd /path/to/your/project
    ```
 
-2. **Configure Claude hooks (run once per project):**
-   ```bash
-   npm run configure-hooks
-   ```
-
-3. **Start Sage**:
+2. **Start Sage**:
    ```bash
    npm start
    ```
@@ -70,6 +65,8 @@ Before installing Sage, ensure you have:
    ```bash
    npm run dev
    ```
+
+3. **First run only**: Sage automatically configures Claude hooks in `.claude/settings.local.json`. You'll see "✓ Hooks configured" in the session list.
 
 4. **Select a Claude session** from the interactive picker using arrow keys and Enter
 
@@ -79,9 +76,10 @@ Before installing Sage, ensure you have:
 
 ### First Run Setup
 On launch, Sage automatically:
-1. Ensures runtime directories exist under `~/.sage/{project-path}/runtime/`
-2. Reads active session metadata captured by the Claude hooks
-3. Displays an interactive session picker
+1. **Configures Claude hooks** (first run only) - installs hooks in `.claude/settings.local.json`
+2. Ensures runtime directories exist under `~/.sage/{project-path}/runtime/`
+3. Reads active session metadata captured by the Claude hooks
+4. Displays an interactive session picker
 
 ### Continuous Review Mode
 After selecting a session:
@@ -164,7 +162,8 @@ Runtime state (sessions, threads, reviews) is stored globally:
 
 ### No sessions appear in picker
 - Verify you've used Claude Code in this repository before
-- Run `npm run configure-hooks` to ensure Claude hooks are installed
+- Restart Sage to trigger auto-configuration of Claude hooks
+- Or run `npm run configure-hooks` manually if auto-configuration fails
 - Check that `~/.sage/{project-path}/runtime/sessions/` contains metadata files
 - Press `R` to refresh the session list in Sage
 
@@ -194,17 +193,19 @@ git init
 ## Configuration
 
 ### Hook Configuration
-Run `npm run configure-hooks` whenever you clone Sage into a new project. This command appends the following entries to `.claude/settings.local.json`:
+Sage **automatically configures hooks on first run**. When you start Sage in a new project, it detects missing hooks and adds them to `.claude/settings.local.json`:
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
-    "Stop":         [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/sageHook.ts\"", "timeout": 30 }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"", "timeout": 30 }] }],
+    "Stop":         [{ "hooks": [{ "type": "command", "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"", "timeout": 30 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"", "timeout": 30 }] }]
   }
 }
 ```
+
+**Manual setup**: If auto-configuration fails (shown as a warning), run `npm run configure-hooks`.
 
 Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `~/.sage/{project-path}/runtime/`.
 
