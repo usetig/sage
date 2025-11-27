@@ -1,11 +1,14 @@
 {
-  "name": "sage",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "@tigtech/sage",
+  "version": "0.1.0",
+  "description": "AI code reviewer that provides automatic second opinions on Claude Code sessions",
+  "main": "./dist/index.js",
   "bin": {
     "sage": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "start": "tsx src/index.tsx",
     "build": "tsc",
@@ -16,21 +19,32 @@
     "type": "git",
     "url": "git+https://github.com/usetig/sage.git"
   },
-  "keywords": [],
+  "keywords": [
+    "claude",
+    "code-review",
+    "ai",
+    "cli",
+    "claude-code"
+  ],
   "author": "",
   "license": "ISC",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "bugs": {
     "url": "https://github.com/usetig/sage/issues"
   },
   "homepage": "https://github.com/usetig/sage#readme",
   "dependencies": {
     "@openai/codex-sdk": "^0.48.0",
-    "@types/node": "^24.9.1",
-    "@types/react": "^19.2.2",
     "chokidar": "^3.6.0",
     "ink": "^6.3.1",
-    "react": "^19.2.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }

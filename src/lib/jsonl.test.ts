@@ -209,6 +209,21 @@ async function runTests(): Promise<void> {
     'latest uuid should still point to the most recent assistant text while waiting',
   );
 
+  const manualInProgress = await extractTurns({
+    transcriptPath: inProgressPath,
+    includeIncomplete: true,
+  });
+  assert.equal(
+    manualInProgress.turns.length,
+    1,
+    'manual extraction should surface partial Claude responses',
+  );
+  assert.equal(
+    manualInProgress.turns[0]?.isPartial,
+    true,
+    'partial turn should be flagged when includeIncomplete is enabled',
+  );
+
   const rejectionLines = [
     JSON.stringify({
       type: 'user',
@@ -277,6 +292,100 @@ async function runTests(): Promise<void> {
     'text-pending',
     'latest turn uuid should still advance to the last assistant event',
   );
+
+  const planLines = [
+    JSON.stringify({
+      type: 'user',
+      uuid: 'plan-prompt',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: 'Make a plan for refactoring' }],
+      },
+      thinkingMetadata: { level: 'none', disabled: false, triggers: [] },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'plan-question',
+      parentUuid: 'plan-prompt',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-plan-question',
+            name: 'PlanQuestion',
+            input: {
+              question: 'What package name would you like to use on npm?',
+              options: ['Scoped name', 'Alternative name'],
+            },
+          },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: 'user',
+      uuid: 'plan-answer',
+      parentUuid: 'plan-question',
+      isSidechain: false,
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-plan-question',
+            content: 'User selected: "We already have an org called tigtech. So it would be @tigtech/sage."',
+          },
+        ],
+        toolUseResult: {
+          questions: [
+            {
+              question: 'What package name would you like to use on npm?',
+            },
+          ],
+          answers: {
+            'What package name would you like to use on npm?': 'We already have an org called tigtech. So it would be @tigtech/sage.',
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      type: 'assistant',
+      uuid: 'plan-exit',
+      parentUuid: 'plan-prompt',
+      isSidechain: false,
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'ExitPlanMode',
+            input: {
+              plan: '## Refactor Steps\n\n1. Update component\n2. Add tests',
+            },
+          },
+        ],
+      },
+    }),
+  ];
+
+  const planPath = await createTempJsonl(planLines);
+  const planResult = await extractTurns({ transcriptPath: planPath });
+  assert.equal(planResult.turns.length, 1, 'plan exit should produce a reviewable turn');
+  const planAgent = planResult.turns[0]?.agent ?? '';
+  assert.ok(planAgent.includes('Claude plan proposal:'), 'plan text should be included in agent output');
+  assert.ok(
+    planAgent.includes('User selection: What package name would you like to use on npm? → We already have an org called tigtech. So it would be @tigtech/sage.'),
+    'plan text should include recorded user choice',
+  );
+  assert.equal(planResult.turns[0]?.isPartial, false, 'plan should not be marked partial');
+
+  const manualPlanResult = await extractTurns({
+    transcriptPath: planPath,
+    includeIncomplete: true,
+  });
+  assert.equal(manualPlanResult.turns.length, 1, 'plan should still appear when includeIncomplete is true');
 
   console.log('jsonl extraction tests passed');
 }

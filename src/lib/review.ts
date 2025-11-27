@@ -24,6 +24,7 @@ export interface ReviewResult {
   };
   isFreshCritique: boolean;
   streamEvents: StreamEvent[];
+  isPartial?: boolean;
 }
 
 export type InitialReviewResult = ReviewResult & {
@@ -240,6 +241,7 @@ export interface IncrementalReviewRequest {
   thread: Thread | null;
   turns: TurnSummary[];
   latestTurnSignature: string | null;
+  isPartial?: boolean;
 }
 
 export async function performIncrementalReview(
@@ -247,13 +249,13 @@ export async function performIncrementalReview(
   onProgress?: (message: string) => void,
   onStreamEvent?: (event: StreamEvent) => void,
 ): Promise<ReviewResult> {
-  const { sessionId, transcriptPath, thread, turns, latestTurnSignature } = request;
+  const { sessionId, transcriptPath, thread, turns, latestTurnSignature, isPartial } = request;
   if (!turns.length) {
     throw new Error('No new turns provided for incremental review.');
   }
   const debug = isDebugMode();
 
-  const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns });
+  const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns, isPartial });
 
   const artifactPath = await writeDebugReviewArtifact({
     instructions: promptPayload.promptText,
@@ -292,6 +294,7 @@ export async function performIncrementalReview(
       },
       isFreshCritique: true,
       streamEvents: [debugEvent],
+      isPartial,
     };
   }
 
@@ -308,7 +311,7 @@ export async function performIncrementalReview(
   const { critique, streamEvents } = await Promise.race([
     runFollowupReview(
       thread,
-      { sessionId, newTurns: turns },
+      { sessionId, newTurns: turns, isPartial },
       { promptPayload, onEvent: onStreamEvent },
     ),
     timeoutPromise,
@@ -326,6 +329,7 @@ export async function performIncrementalReview(
     },
     isFreshCritique: true,
     streamEvents,
+    isPartial,
   };
 }
 

@@ -38,6 +38,7 @@ export interface InitialReviewContext {
 export interface FollowupReviewContext {
   sessionId: string;
   newTurns: TurnSummary[];
+  isPartial?: boolean;
 }
 
 const singleton = new Codex();
@@ -212,11 +213,11 @@ export function buildInitialPromptPayload(
 }
 
 export function buildFollowupPromptPayload(
-  { sessionId, newTurns }: FollowupReviewContext,
+  { sessionId, newTurns, isPartial }: FollowupReviewContext,
 ): PromptPayload {
   const formattedTurns = formatTurnsForPrompt(newTurns);
 
-  const promptText = [
+  const promptLines = [
     '# Audience Reminder',
     'You are speaking directly to the DEVELOPER (the human user).',
     '- Use "you/your" to refer to the developer',
@@ -281,10 +282,20 @@ export function buildFollowupPromptPayload(
     '- Prioritize OUTCOME over PROCESS: If Claude successfully answers the user\'s core question or solves the problem, do NOT critique it for skipping intermediate steps (like "making a plan").',
     '',
     `Session ID: ${sessionId}`,
-    'New Claude turn(s) follow between <new_turns> tags.',
-  ].join('\n');
+  ];
 
-  const contextText = formattedTurns;
+  if (isPartial) {
+    promptLines.push(
+      '',
+      '# Partial Response Notice',
+      'Claude was still generating its reply when Sage was invoked manually.',
+      'Treat this critique as provisional until the full response is available.',
+    );
+  }
+
+  promptLines.push('New Claude turn(s) follow between <new_turns> tags.');
+
+  const promptText = promptLines.join('\n');
 
   return {
     prompt: [promptText, '<new_turns>', formattedTurns, '</new_turns>'].join('\n'),
@@ -321,8 +332,11 @@ function formatTurnsForPrompt(turns: TurnSummary[]): string {
         '│ CLAUDE RESPONSE' + ' '.repeat(claudeResponsePadding) + '│',
         '└' + '─'.repeat(BOX_WIDTH - 2) + '┘',
         turn.agent ?? '(Claude has not responded yet)',
+        turn.isPartial
+          ? '[Captured while Claude was still responding — content may be incomplete.]'
+          : null,
       ];
-      return pieces.join('\n');
+      return pieces.filter(Boolean).join('\n');
     })
     .join('\n\n');
 }

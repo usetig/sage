@@ -131,6 +131,7 @@ This document gives any coding agent the context it needs to contribute safely a
 - Use **structured output schemas** for Codex responses. All fields must be in the `required` array (OpenAI constraint). Instruct Codex to return empty strings for optional sections.
 - Respect the warmup filter—don't reintroduce warmup-only sessions into the picker unless you add an explicit toggle.
 - Preserve sidechain filtering in `extractTurns()`—only primary Claude/developer turns should enqueue reviews or reach Codex.
+- Capture plan-mode answers: `extractTurns()` now threads `tool_result` payloads (e.g., “User answered Claude’s question…”) back into the assistant turn so Sage sees the full context. If Claude changes the schema for those results, update the parser rather than re-implementing the logic elsewhere.
 - When touching session parsing, account for resume forks and unusual content; tolerant parsers prevent crashing on new Claude schema changes.
 - Update docs (`what-is-sage.md`, `agents.md`, troubleshooting notes) whenever behavior or CLI flags change.
 
@@ -146,7 +147,7 @@ This document gives any coding agent the context it needs to contribute safely a
 
 - **Resume chains:** Sage relies on cached assistant UUIDs to skip duplicated turns when Claude creates a new transcript on resume. More robust cross-file stitching is still future work.
 - **Thread persistence:** ✅ Sage now saves Codex thread metadata to `~/.sage/{project-path}/threads/` and automatically resumes threads when re-selecting sessions. The `isFreshCritique` flag prevents duplicate critiques when resuming unchanged threads. This enables context preservation across Sage restarts and faster incremental reviews. See `documentation/thread-persistence.md` for details.
-- **Incomplete responses on manual selection:** If you select a session while Claude is still typing, the initial review may process a partial response and potentially fail or produce inaccurate critique. Continuous mode is unaffected since the Stop hook only fires after Claude completes. Workaround: Wait for Claude to finish before selecting the session in Sage, or let continuous mode catch the complete response once it arrives.
+- **Partial responses:** Sage now records “partial” critiques when you press `M` during Claude’s response. These show a yellow banner and keep the existing canonical turn signature untouched so a second, definitive review runs automatically once Claude finishes. Use manual sync freely—partial and final critiques both remain in the scrollback, so developers can see what changed.
 - **Critique history navigation:** Reviews stack vertically for scrollback but no arrow-key navigation within the UI. Users scroll their terminal to see previous reviews.
 - **Read-only enforcement:** Codex threads currently rely on context instructions; explicit permission settings (if supported by the SDK) would enhance safety.
 - **Comprehensive logging:** Minimal debug output goes to the console; consider writing a log file for diagnosing hook or Codex failures.

@@ -32,6 +32,7 @@ export interface TurnSummary {
   agent?: string;
   userUuid?: string;
   assistantUuid?: string;
+  isPartial?: boolean;
 }
 
 const SESSIONS_DIR = getSessionsDir();
@@ -86,8 +87,9 @@ export async function listActiveSessions(): Promise<ActiveSession[]> {
 export async function extractTurns(options: {
   transcriptPath: string;
   sinceUuid?: string | null;
+  includeIncomplete?: boolean;
 }): Promise<ExtractedTurns> {
-  const { transcriptPath, sinceUuid } = options;
+  const { transcriptPath, sinceUuid, includeIncomplete = false } = options;
   const stream = fs.createReadStream(transcriptPath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
@@ -95,6 +97,7 @@ export async function extractTurns(options: {
   const primaryUserPrompts: Array<{ uuid: string; text: string }> = [];
   const assistantEntries: Array<{ uuid: string; parentUuid: string | null; message: any; seq: number }> = [];
   const errorToolResults: Array<{ parentUuid: string | null; seq: number }> = [];
+  const toolResultsById = new Map<string, string[]>();
   let sequence = 0;
 
   try {
@@ -119,6 +122,7 @@ export async function extractTurns(options: {
 
       if (entry?.type === 'user' && entry?.message) {
         if (!uuid) continue;
+        collectToolResultSummaries(entry.message, toolResultsById);
         if (isErrorToolResult(entry.message)) {
           const parentUuid =
             typeof entry.parentUuid === 'string' ? entry.parentUuid : null;
@@ -185,7 +189,7 @@ export async function extractTurns(options: {
 
     for (const response of responses) {
       lastResponseSeq = Math.max(lastResponseSeq, response.seq);
-      const { text: formatted, hasTextResponse } = formatAssistantMessage(response.message);
+      const { text: formatted, hasTextResponse } = formatAssistantMessage(response.message, toolResultsById);
       const trimmed = formatted.trim();
       if (trimmed) {
         agentPieces.push(trimmed);
@@ -198,15 +202,19 @@ export async function extractTurns(options: {
       }
     }
 
-    if (!hasText) {
+    const isIncomplete = lastResponseSeq > lastTextSeq;
+    const shouldEmit =
+      hasText ||
+      (includeIncomplete && isIncomplete && agentPieces.length > 0);
+
+    if (!shouldEmit) {
       if (candidateLatestUuid) {
         latestUuid = candidateLatestUuid;
       }
       continue;
     }
 
-    // If the latest assistant event for this turn is not textual output, Claude is still working.
-    if (lastResponseSeq > lastTextSeq) {
+    if (!includeIncomplete && isIncomplete) {
       if (candidateLatestUuid) {
         latestUuid = candidateLatestUuid;
       }
@@ -225,6 +233,7 @@ export async function extractTurns(options: {
       agent: assistantText,
       userUuid: userEntry.uuid,
       assistantUuid: lastAssistantUuid,
+      isPartial: isIncomplete,
     };
     turns.push(summary);
 
@@ -295,7 +304,10 @@ function resolveRootUserUuid(
   return null;
 }
 
-function formatAssistantMessage(message: any): { text: string; hasTextResponse: boolean } {
+function formatAssistantMessage(
+  message: any,
+  toolResultsById: Map<string, string[]>,
+): { text: string; hasTextResponse: boolean } {
   if (!message) return { text: '', hasTextResponse: false };
   if (typeof message === 'string') return { text: message, hasTextResponse: true };
   if (typeof message.content === 'string') {
@@ -318,10 +330,27 @@ function formatAssistantMessage(message: any): { text: string; hasTextResponse: 
     }
     if (chunk.type === 'tool_use') {
       const name = typeof chunk.name === 'string' ? chunk.name : '';
+      if (name === 'ExitPlanMode') {
+        const planText = extractPlanText(chunk.input);
+        if (planText) {
+          pieces.push(planText);
+          hasText = true;
+          continue;
+        }
+      }
       if (!shouldIncludeToolUse(name)) continue;
       const header = name ? `[Tool ${name}]` : '[Tool]';
       const rendered = stringifyToolInput(chunk.input);
       pieces.push(rendered ? `${header}\n${rendered}` : header);
+      const toolId = typeof chunk.id === 'string' ? chunk.id : null;
+      if (toolId) {
+        const summaries = toolResultsById.get(toolId);
+        if (summaries?.length) {
+          for (const summary of summaries) {
+            pieces.push(summary);
+          }
+        }
+      }
     }
   }
   return { text: pieces.join('\n\n'), hasTextResponse: hasText };
@@ -342,6 +371,88 @@ function stringifyToolInput(input: any): string {
   } catch {
     return String(input);
   }
+}
+
+function extractPlanText(input: any): string | null {
+  if (!input || typeof input !== 'object') return null;
+  const plan = typeof input.plan === 'string' ? input.plan.trim() : '';
+  if (!plan) return null;
+  return ['Claude plan proposal:', plan].join('\n\n');
+}
+
+function collectToolResultSummaries(message: any, store: Map<string, string[]>): void {
+  if (!message || typeof message !== 'object') return;
+  const content = Array.isArray(message.content) ? message.content : [];
+  for (const chunk of content) {
+    if (!chunk || typeof chunk !== 'object' || chunk.type !== 'tool_result') continue;
+    const toolId = typeof chunk.tool_use_id === 'string' ? chunk.tool_use_id : null;
+    if (!toolId) continue;
+
+    const summaries = store.get(toolId) ?? [];
+    const directText = extractToolResultContent(chunk.content);
+    if (directText) {
+      summaries.push(directText);
+    }
+
+    const structured = chunk.toolUseResult ?? message.toolUseResult;
+    const structuredSummaries = extractStructuredToolResult(structured);
+    if (structuredSummaries.length) {
+      summaries.push(...structuredSummaries);
+    }
+
+    if (summaries.length) {
+      store.set(toolId, mergeUniqueStrings(summaries));
+    }
+  }
+}
+
+function extractToolResultContent(raw: any): string | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    return raw.trim() ? raw.trim() : null;
+  }
+  if (Array.isArray(raw)) {
+    const parts = raw
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object' && typeof item.text === 'string') {
+          return item.text.trim();
+        }
+        return '';
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join('\n') : null;
+  }
+  return null;
+}
+
+function extractStructuredToolResult(structured: any): string[] {
+  if (!structured || typeof structured !== 'object') return [];
+  const answers = structured.answers && typeof structured.answers === 'object'
+    ? structured.answers
+    : null;
+  if (!answers) return [];
+
+  const summaries: string[] = [];
+  for (const [question, answer] of Object.entries(answers)) {
+    if (typeof answer !== 'string' || !answer.trim()) continue;
+    const questionText = question.trim();
+    const answerText = answer.trim();
+    summaries.push(`User selection: ${questionText} → ${answerText}`);
+  }
+  return summaries;
+}
+
+function mergeUniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  }
+  return result;
 }
 
 async function isWarmupSession(transcriptPath: string): Promise<boolean> {

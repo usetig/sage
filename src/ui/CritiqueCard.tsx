@@ -6,6 +6,7 @@ interface CritiqueCardProps {
   critique: CritiqueResponse;
   prompt?: string;
   index: number;
+  isPartial?: boolean;
 }
 
 const VERDICT_SYMBOLS = {
@@ -24,6 +25,7 @@ export function CritiqueCard({
   critique,
   prompt,
   index,
+  isPartial = false,
 }: CritiqueCardProps) {
   const symbol = VERDICT_SYMBOLS[critique.verdict] || '•';
   const color = VERDICT_COLORS[critique.verdict] || 'white';
@@ -36,6 +38,14 @@ export function CritiqueCard({
       <Text dimColor>
         Reviewing response for: {prompt ? `"${truncatePrompt(prompt)}"` : `Review #${index}`}
       </Text>
+
+      {isPartial && (
+        <Box marginTop={1}>
+          <Text color="yellow">
+            ⚠ Partial review — Claude was still responding when this critique was generated.
+          </Text>
+        </Box>
+      )}
 
       <Box marginTop={1}>
         <Text>

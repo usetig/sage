@@ -26,25 +26,9 @@ assert.ok(
   !payload.contextText.includes('Sub-agent'),
   'context should not contain sidechain text',
 );
-assert.equal(
-  payload.contextText,
-  [
-    'Turn 1',
-    'User prompt:',
-    'Primary prompt',
-    '',
-    'Claude response:',
-    'Main agent begins response line one.',
-    '',
-    'Turn 2',
-    'User prompt:',
-    'Second user prompt',
-    '',
-    'Claude response:',
-    'Second agent reply',
-  ].join('\n'),
-  'contextText should format turns consistently',
-);
+assert.ok(payload.contextText.includes('┌─ Turn 1'), 'context should include formatted turn header');
+assert.ok(payload.contextText.includes('USER PROMPT'), 'context should label user prompt');
+assert.ok(payload.contextText.includes('CLAUDE RESPONSE'), 'context should include Claude response label');
 
 console.log('codex initial prompt tests passed');
 
@@ -57,6 +41,23 @@ assert.equal(
   followupPayload.contextText,
   payload.contextText,
   'follow-up payload should format turns identically to initial payload',
+);
+
+const partialPayload = buildFollowupPromptPayload({
+  sessionId: 'session-123',
+  newTurns: [
+    {
+      ...SAMPLE_TURNS[0],
+      isPartial: true,
+    },
+  ],
+  isPartial: true,
+});
+
+assert.ok(partialPayload.promptText.includes('# Partial Response Notice'), 'partial prompt should include notice');
+assert.ok(
+  partialPayload.contextText.includes('content may be incomplete'),
+  'partial context should warn about incomplete content',
 );
 
 console.log('codex follow-up prompt tests passed');

@@ -32,6 +32,8 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 
 const repositoryPath = path.resolve(process.cwd());
 
+type QueueSource = 'hook' | 'manual';
+
 interface CompletedReview extends ReviewResult {
   session: ActiveSession;
   turnSignature?: string;
@@ -43,7 +45,9 @@ interface ReviewQueueItem {
   turns: TurnSummary[];
   promptPreview: string;
   latestTurnSignature: string | null;
-  signalPath: string;
+  signalPath: string | null;
+  source: QueueSource;
+  isPartial: boolean;
 }
 
 interface ChatMessage {
@@ -391,7 +395,16 @@ export default function App() {
     }
 
     try {
+      const queueSizeBefore = queueRef.current.length;
       await drainSignals(activeSession.sessionId);
+      const manualQueued = await queueManualReview(activeSession);
+      const queueDelta = queueRef.current.length - queueSizeBefore;
+      if (!manualQueued && queueDelta === 0) {
+        setStatusMessages((prev) => [
+          ...prev,
+          'Manual sync: no new Claude output yet (response may still be streaming).',
+        ]);
+      }
       manualSyncTimeoutRef.current = setTimeout(() => {
         setManualSyncTriggered(false);
       }, 2000);
@@ -512,6 +525,7 @@ export default function App() {
 
   async function persistReview(review: CompletedReview): Promise<void> {
     if (review.isFreshCritique === false) return;
+    if (review.isPartial) return;
     if (!review.turnSignature) return;
     const sessionId = review.session.sessionId;
     const stored: StoredReview = {
@@ -541,7 +555,9 @@ export default function App() {
     if (!job.turns.length) return;
     queueRef.current = [...queueRef.current, job];
     setQueue(queueRef.current);
-    setStatusMessages((prev) => [...prev, `Queued review: ${job.promptPreview}`]);
+    const origin = job.source === 'manual' ? 'Queued manual review' : 'Queued review';
+    const partialSuffix = job.isPartial ? ' (partial response)' : '';
+    setStatusMessages((prev) => [...prev, `${origin}: ${job.promptPreview}${partialSuffix}`]);
     if (!workerRunningRef.current) {
       void processQueue();
     }
@@ -614,10 +630,12 @@ export default function App() {
             setStatusMessages(['Initial review paused until Claude finishes its first response.']);
           }
 
-          try {
-            await fs.unlink(job.signalPath);
-          } catch {
-            // ignore unlink errors
+          if (job.signalPath) {
+            try {
+              await fs.unlink(job.signalPath);
+            } catch {
+              // ignore unlink errors
+            }
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Initial review failed. Please try again.';
@@ -629,7 +647,9 @@ export default function App() {
         queueRef.current = queueRef.current.slice(1);
         setQueue(queueRef.current);
         setCurrentJob(null);
-        processedSignalsRef.current.delete(job.signalPath);
+        if (job.signalPath) {
+          processedSignalsRef.current.delete(job.signalPath);
+        }
         continue;
       }
 
@@ -648,6 +668,7 @@ export default function App() {
             thread: codexThreadRef.current,
             turns: job.turns,
             latestTurnSignature: job.latestTurnSignature,
+            isPartial: job.isPartial,
           },
           (message) => setCurrentStatusMessage(message),
           appendStreamEvent,
@@ -658,9 +679,14 @@ export default function App() {
           : job.promptPreview;
         finalizeStream({ sessionId: job.sessionId, prompt: incrementalPrompt }, result.streamEvents);
 
-        if (result.turnSignature) {
+        if (result.turnSignature && !job.isPartial) {
           lastTurnSignatureRef.current = result.turnSignature;
         }
+
+        const effectiveTurnSignature =
+          job.isPartial && result.turnSignature
+            ? `partial:${result.turnSignature}`
+            : result.turnSignature;
 
         appendReview({
           critique: result.critique,
@@ -668,16 +694,19 @@ export default function App() {
           latestPrompt: result.latestPrompt,
           debugInfo: result.debugInfo,
           completedAt: result.completedAt,
-          turnSignature: result.turnSignature,
+          turnSignature: effectiveTurnSignature,
           session: activeSessionRef.current ?? activeSession,
           isFreshCritique: result.isFreshCritique,
           streamEvents: result.streamEvents,
+          isPartial: job.isPartial,
         });
 
-        try {
-          await fs.unlink(job.signalPath);
-        } catch {
-          // ignore unlink errors
+        if (job.signalPath) {
+          try {
+            await fs.unlink(job.signalPath);
+          } catch {
+            // ignore unlink errors
+          }
         }
 
         setCurrentStatusMessage(debugMode
@@ -700,7 +729,9 @@ export default function App() {
       queueRef.current = queueRef.current.slice(1);
       setQueue(queueRef.current);
       setCurrentJob(null);
-      processedSignalsRef.current.delete(job.signalPath);
+      if (job.signalPath) {
+        processedSignalsRef.current.delete(job.signalPath);
+      }
     }
 
     workerRunningRef.current = false;
@@ -774,6 +805,8 @@ export default function App() {
         promptPreview,
         latestTurnSignature: latestTurnUuid,
         signalPath: filePath,
+        source: 'hook',
+        isPartial: turns.some((turn) => turn.isPartial === true),
       });
       enqueued = true;
     } catch (error) {
@@ -784,6 +817,73 @@ export default function App() {
         processedSignalsRef.current.delete(filePath);
       }
     }
+  }
+
+  async function queueManualReview(session: ActiveSession): Promise<boolean> {
+    const sinceSignature = latestKnownSignature();
+    const { turns, latestTurnUuid } = await extractTurns({
+      transcriptPath: session.transcriptPath,
+      sinceUuid: sinceSignature ?? null,
+      includeIncomplete: true,
+    });
+
+    if (!turns.length) {
+      return false;
+    }
+
+    const hasAgentContent = turns.some((turn) => Boolean(turn.agent && turn.agent.trim()));
+    if (!hasAgentContent) {
+      return false;
+    }
+
+    const effectiveSignature =
+      latestTurnUuid ?? turns[turns.length - 1]?.assistantUuid ?? null;
+
+    const duplicatePending = queueRef.current.some((item) => {
+      if (item.sessionId !== session.sessionId) return false;
+      if (effectiveSignature) {
+        return item.latestTurnSignature === effectiveSignature;
+      }
+      return item.source === 'manual' && item.latestTurnSignature === null;
+    });
+    if (duplicatePending) {
+      return false;
+    }
+
+    const isPartial = turns.some((turn) => turn.isPartial === true);
+
+    if (effectiveSignature) {
+      if (isPartial) {
+        const partialSignature = `partial:${effectiveSignature}`;
+        const hasExistingPartial = reviews.some(
+          (review) => review.isPartial && review.turnSignature === partialSignature,
+        );
+        if (hasExistingPartial) {
+          return false;
+        }
+      } else {
+        const hasExistingFullReview = reviews.some(
+          (review) => !review.isPartial && review.turnSignature === effectiveSignature,
+        );
+        if (hasExistingFullReview) {
+          return false;
+        }
+      }
+    }
+
+    const promptPreview = getPromptPreview(turns[0].user);
+    enqueueJob({
+      sessionId: session.sessionId,
+      transcriptPath: session.transcriptPath,
+      turns,
+      promptPreview,
+      latestTurnSignature: effectiveSignature,
+      signalPath: null,
+      source: 'manual',
+      isPartial,
+    });
+
+    return true;
   }
 
   async function readSignalFile(filePath: string): Promise<{ sessionId: string; transcriptPath: string; queuedAt: number } | null> {
@@ -805,17 +905,17 @@ export default function App() {
 
   function latestKnownSignature(): string | null {
     if (queueRef.current.length) {
-      const lastJob = queueRef.current[queueRef.current.length - 1];
-      if (lastJob.latestTurnSignature) return lastJob.latestTurnSignature;
+      for (let index = queueRef.current.length - 1; index >= 0; index -= 1) {
+        const job = queueRef.current[index];
+        if (job.source === 'manual' && job.isPartial) {
+          continue;
+        }
+        if (job.latestTurnSignature) {
+          return job.latestTurnSignature;
+        }
+      }
     }
     return lastTurnSignatureRef.current;
-  }
-
-  function formatQueueLabel(job: ReviewQueueItem): string {
-    if (job.turns.length <= 1) return job.promptPreview;
-    const extraCount = job.turns.length - 1;
-    const plural = extraCount === 1 ? '' : 's';
-    return `${job.promptPreview} (+${extraCount} more turn${plural})`;
   }
 
   function getPromptPreview(text: string, maxLength = 80): string {
@@ -922,6 +1022,7 @@ export default function App() {
                 critique={item.critique}
                 prompt={item.latestPrompt}
                 index={index + 1}
+                isPartial={item.isPartial === true}
               />
               ))}
 
@@ -932,11 +1033,14 @@ export default function App() {
                   const queueDisplay = queuedItems.length > 0 && (
                     <Box marginTop={1} flexDirection="column">
                       <Text dimColor>Queue:</Text>
-                      {queuedItems.map((item, index) => (
-                        <Text key={`${item.sessionId}-${index}`} dimColor>
-                          {`  ${index + 1}. "${item.promptPreview}"${item.turns.length > 1 ? ` (${item.turns.length} turns)` : ''}`}
-                        </Text>
-                      ))}
+                      {queuedItems.map((item, index) => {
+                        const label = formatQueueLabel(item);
+                        return (
+                          <Text key={`${item.sessionId}-${index}`} dimColor>
+                            {`  ${index + 1}. ${label}`}
+                          </Text>
+                        );
+                      })}
                     </Box>
                   );
 
@@ -945,7 +1049,7 @@ export default function App() {
                       <>
                         {currentJob && (
                           <Text dimColor>
-                            Reviewing response for: "{currentJob.promptPreview}"
+                            Reviewing response for: {formatQueueLabel(currentJob)}
                           </Text>
                         )}
                         <Spinner message={currentStatusMessage} />
@@ -1071,6 +1175,7 @@ function toCompletedReview(stored: StoredReview, session: ActiveSession): Comple
     session,
     isFreshCritique: true,
     streamEvents: [],
+    isPartial: false,
   };
 }
 
@@ -1097,13 +1202,25 @@ function getProjectName(cwdPath: string): string {
   return path.basename(cwdPath);
 }
 
+function formatQueueLabel(job: ReviewQueueItem): string {
+  const baseLabel = (() => {
+    if (job.turns.length <= 1) return job.promptPreview;
+    const extraCount = job.turns.length - 1;
+    const plural = extraCount === 1 ? '' : 's';
+    return `${job.promptPreview} (+${extraCount} more turn${plural})`;
+  })();
+  const partialSuffix = job.isPartial ? ' [partial]' : '';
+  const originSuffix = job.source === 'manual' ? ' [manual]' : '';
+  return `${baseLabel}${partialSuffix}${originSuffix}`;
+}
+
 function formatStatus(
   currentJob: ReviewQueueItem | null,
   queue: ReviewQueueItem[],
   isInitialReview: boolean,
   manualSyncTriggered: boolean,
 ): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string; queuedItems: ReviewQueueItem[] } {
-  const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
+  const manualSyncLabel = manualSyncTriggered ? 'M to trigger review manually (triggered)' : 'M to trigger review manually';
   const streamOverlayLabel = 'Ctrl+O to view stream';
   const queuedItems = currentJob ? queue.slice(1) : queue;
   const pendingCount = queuedItems.length;
@@ -1119,14 +1236,12 @@ function formatStatus(
   }
 
   if (currentJob) {
-    const turnInfo = currentJob.turns.length > 1
-      ? ` (${currentJob.turns.length} turns)`
-      : '';
+    const jobLabel = `"${formatQueueLabel(currentJob)}"`;
     const queueInfo = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     const queueSuffix = pendingCount > 0 ? ` • ${pendingCount} queued` : '';
     return {
-      status: `Status: ⏵ Reviewing response for "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
-      statusMessage: `reviewing response for "${currentJob.promptPreview}"${queueSuffix}`,
+      status: `Status: ⏵ Reviewing response for ${jobLabel}${queueInfo}`,
+      statusMessage: `reviewing response for ${jobLabel}${queueSuffix}`,
       keybindings: `${streamOverlayLabel} • ${manualSyncLabel}`,
       isReviewing: true,
       queuedItems,
