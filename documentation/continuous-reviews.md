@@ -26,9 +26,9 @@ This guide documents the current continuous-review implementation that rides on 
    - `processSignalFile()` validates that the signal belongs to the active session, re-reads the transcript with `extractTurns({ sinceUuid })`, and enqueues new turns alongside the signal path.  
    - Empty extractions imply the signal is stale (e.g., duplicate `Stop`); in that case the file is removed and no review is queued.
 
-6. **Queue worker**  
-   - `processQueue()` drains jobs FIFO, reusing the live Codex thread (unless debug mode short-circuits).  
-   - Successful critiques append to the UI feed, atomically update the review cache, and delete the signal file.  
+6. **Queue worker**
+   - `processQueue()` drains jobs FIFO, reusing the live Codex thread to maintain context across reviews.
+   - Successful critiques append to the UI feed, atomically update the review cache, and delete the signal file.
    - Failures surface a status message and leave the signal on disk so the job retries when Sage restarts or the user presses `M`.
 
 ---
@@ -58,10 +58,10 @@ This guide documents the current continuous-review implementation that rides on 
 
 - `Ctrl+O` — Toggle the live Codex activity stream overlay.
 - `B` — Exit continuous mode and return to the session list.
-- `M` — Manually rescan `~/.sage/{project-path}/runtime/needs-review/` (useful after resolving hook issues or when running in debug mode).
+- `M` — Manually rescan `~/.sage/{project-path}/runtime/needs-review/` (useful after resolving hook issues or if Sage was closed while Claude was responding).
 - `C` — Enter chat mode to ask Sage questions about your codebase or the latest critique (see `documentation/specs/interactive-followup-design.md`).
 
-Status messaging reflects the current stage (initial review, incremental review, waiting, debug mode). When debug mode is active the status banner and critique cards explicitly mention it and link to the artifact path.
+Status messaging reflects the current stage (initial review, incremental review, waiting). Critique cards always display the artifact path (`.debug/review-*.txt`) so you can inspect exactly what was sent to Codex.
 
 ---
 

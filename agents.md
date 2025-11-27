@@ -22,7 +22,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/jsonl.ts` parses Claude JSONL logs (primary turns only). Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
 | **Continuous Mode** | After initial review, Sage watches `~/.sage/{project-path}/runtime/needs-review/` for hook signals and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
-| **Debug Mode** | Prompts/context are always archived under `.debug/`. Set `SAGE_DEBUG=1` to bypass Codex calls and emit mock critiques. |
+| **Artifacts** | Prompts and context are archived under `.debug/` for inspection. All reviews generate artifacts regardless of operation mode. |
 
 ---
 
@@ -70,7 +70,7 @@ This document gives any coding agent the context it needs to contribute safely a
 - `src/hooks/sageHook.ts` — Receives Claude Code hook payloads (SessionStart/Stop/UserPromptSubmit). Writes per-session metadata to `~/.sage/{project-path}/runtime/sessions/` and queues review signals in `~/.sage/{project-path}/runtime/needs-review/`. Note: SessionEnd hook was removed due to unreliability.
 - `src/scripts/configureHooks.ts` — Hook configuration module that auto-installs Sage hooks on startup. Also available as CLI helper (`npm run configure-hooks`). Uses absolute paths to Sage's compiled hook script (`dist/hooks/sageHook.js`) to work correctly when Sage is installed globally via npm.
 - `src/lib/jsonl.ts` — Streams Claude JSONL transcripts, filters warmups/compactions, and extracts user⇄assistant turns.
-- `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and manages debug artifacts.
+- `src/lib/review.ts` — Review orchestration layer. Handles initial and incremental critiques, stores thread metadata, and generates artifacts.
 - `src/lib/codex.ts` — Codex SDK wrapper with JSON schema for structured output. Builds initial and follow-up prompts, manages thread lifecycle.
 - `src/ui/App.tsx` — Main TUI orchestrator. Manages session picker, signal watcher (chokidar), FIFO queue, continuous review state, and chat threads.
 - `src/ui/CritiqueCard.tsx` — Structured critique renderer with symbol-coded verdicts and color-coded sections.
@@ -171,13 +171,11 @@ This document gives any coding agent the context it needs to contribute safely a
 
 ---
 
-## 10. Debug Mode & Artifacts
+## 10. Artifact Inspection
 
-- **Artifacts (Always Created):** Sage now writes prompt instructions plus the raw conversation/context to `.debug/review-<prompt>.txt` for **every review**, regardless of debug mode. Filenames are sanitized and deduplicated. The directory is ignored by git. Each review card displays the artifact path underneath "Review #x • ..." so you can always inspect what was sent to Codex.
-- **Debug Mode Purpose:** Quickly validate end-to-end plumbing without waiting on the Codex agent. Useful when the SDK is unavailable, when working offline, or when testing the review flow.
-- **Activation:** Export `SAGE_DEBUG` with any truthy value (`1`, `true`, `yes`, `on`) before launching Sage. Leave it unset to run normally.
-- **Behavior in Debug Mode:** Initial and incremental reviews skip Codex API calls entirely, returning mock critiques stamped "Debug mode active". The status pane shows `Debug mode active — Codex agent bypassed`. Artifacts are still created as usual.
-- **UI Display:** Artifact paths are shown under "Review #x • ..." in all modes (both normal and debug). In debug mode, critique cards also include the prompt text inline for quick reference.
+- **Artifacts (Always Created):** Sage writes prompt instructions plus the raw conversation/context to `.debug/review-<prompt>.txt` for **every review**. Filenames are sanitized and deduplicated. The directory is ignored by git. Each review card displays the artifact path underneath "Review #x • ..." so you can always inspect what was sent to Codex.
+- **Purpose:** Allows developers to inspect exactly what prompt and context were sent to Codex during each review. Useful for understanding how Sage formulates critiques and debugging unexpected review results.
+- **File Format:** Artifacts include headers with session ID and review type, followed by the INSTRUCTIONS section (system prompt sent to Codex) and CONTEXT section (formatted conversation turns).
 - **Cleanup:** Remove the `.debug/` folder or individual files when you no longer need them. They are ignored by version control but can accumulate quickly during rapid iteration.
 
 ---

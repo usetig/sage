@@ -99,7 +99,6 @@ Each review includes:
 
 - **[Architecture Guide](documentation/CODEBASE_GUIDE.md)** - Comprehensive technical reference
 - **[Contributing](agents.md)** - Guidelines for contributors and AI agents
-- **[Debug Mode](documentation/debug-mode.md)** - Testing without Codex API calls
 - **[Troubleshooting](documentation/thread-persistence.md)** - Advanced state management
 
 ## Keyboard Controls
@@ -115,20 +114,6 @@ Each review includes:
 - `B` - Back to session picker
 - `Ctrl+C` - Exit
 
-## Debug Mode
-
-Test Sage without making Codex API calls:
-
-```bash
-SAGE_DEBUG=1 npm start
-```
-
-Debug mode:
-- Skips actual Codex agent calls
-- Returns mock critique responses
-- Writes full prompts and context to `.debug/review-*.txt`
-- Useful for testing the pipeline end-to-end
-
 ## Project Structure
 
 ```
@@ -140,14 +125,16 @@ sage/
 │   │   ├── codex.ts          # Codex SDK wrapper & prompts
 │   │   ├── jsonl.ts          # Claude JSONL parsing utilities
 │   │   ├── review.ts         # Review orchestration
-│   │   └── debug.ts          # Debug mode utilities
+│   │   ├── threads.ts        # Thread metadata & resumption
+│   │   └── debug.ts          # Artifact utilities
 │   ├── hooks/                # Claude hook shim (invoked by Claude Code)
 │   │   └── sageHook.ts
+│   ├── ui/                   # Terminal UI components
+│   │   ├── App.tsx           # Main TUI orchestrator
+│   │   └── CritiqueCard.tsx  # Critique renderer
 │   └── scripts/              # Developer utilities (hook installer)
 │       └── configureHooks.ts
-│       ├── App.tsx           # Main TUI orchestrator
-│       └── CritiqueCard.tsx  # Critique renderer
-├── .debug/                    # Debug artifacts (when SAGE_DEBUG=1)
+├── .debug/                    # Artifact files written for inspection
 └── documentation/             # Reference docs
 
 Runtime state (sessions, threads, reviews) is stored globally:
@@ -176,7 +163,6 @@ Runtime state (sessions, threads, reviews) is stored globally:
 ### Codex connection errors
 - Verify your Codex SDK credentials are configured
 - Check network connectivity
-- Try debug mode to test without Codex: `SAGE_DEBUG=1 npm start`
 
 ### "Not a git repository" error
 Sage requires running in a Git-tracked directory. Initialize git:
@@ -223,7 +209,7 @@ Each project gets its own subdirectory based on its full path (e.g., `/Users/you
 
 **Local Project Files**:
 
-- `.debug/` - Debug artifacts when `SAGE_DEBUG=1` (auto-generated, local to project)
+- `.debug/` - Prompt artifacts for inspection (auto-generated, local to project)
 - `.claude/settings.local.json` - Claude Code hooks (auto-configured)
 
 ## Development
@@ -261,7 +247,7 @@ See [agents.md](./agents.md) for contributor guidelines and architecture details
 
 - Does not follow resumed session chains back to parent sessions
 - No arrow-key navigation within critique history
-- Minimal persistent logging (debug mode only)
+- Minimal persistent logging to console (artifacts available in `.debug/`)
 - Warmup-only sessions are filtered but take up session IDs
 
 ## License

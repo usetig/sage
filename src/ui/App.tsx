@@ -15,7 +15,6 @@ import type { StreamEvent } from '../lib/codex.js';
 import { CritiqueCard } from './CritiqueCard.js';
 import { ChatCard } from './ChatCard.js';
 import { Spinner } from './Spinner.js';
-import { isDebugMode } from '../lib/debug.js';
 import {
   loadReviewCache,
   saveReviewCache,
@@ -58,7 +57,6 @@ interface ChatMessage {
   relatedReviewIndex?: number;
 }
 
-const debugMode = isDebugMode();
 const STREAM_EVENT_HISTORY_LIMIT = 400;
 
 type StreamContext = {
@@ -353,34 +351,22 @@ export default function App() {
         });
       }
 
-      if (debugMode) {
-        const debugInfo = [
-          'Debug mode active — Codex agent bypassed.',
-          `Session ID: ${session.sessionId}`,
-          `Transcript: ${session.transcriptPath}`,
-          result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
-        ]
-          .filter(Boolean)
-          .join(' • ');
-        setCurrentStatusMessage(debugInfo);
-      } else {
-        if (resumeStatusTimeoutRef.current) {
-          clearTimeout(resumeStatusTimeoutRef.current);
-          resumeStatusTimeoutRef.current = null;
-        }
-        if (deferredInitialReview) {
-          setStatusMessages(['Initial review paused until Claude finishes its first response.']);
-        } else if (resumedWithoutChanges) {
-          setCurrentStatusMessage('Resuming Sage thread...');
-          resumeStatusTimeoutRef.current = setTimeout(() => {
-            setCurrentStatusMessage(null);
-            resumeStatusTimeoutRef.current = null;
-          }, 1200);
-          setStatusMessages(['Session previously reviewed. Using existing context...']);
-        } else {
+      if (resumeStatusTimeoutRef.current) {
+        clearTimeout(resumeStatusTimeoutRef.current);
+        resumeStatusTimeoutRef.current = null;
+      }
+      if (deferredInitialReview) {
+        setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+      } else if (resumedWithoutChanges) {
+        setCurrentStatusMessage('Resuming Sage thread...');
+        resumeStatusTimeoutRef.current = setTimeout(() => {
           setCurrentStatusMessage(null);
-          setStatusMessages([]);
-        }
+          resumeStatusTimeoutRef.current = null;
+        }, 1200);
+        setStatusMessages(['Session previously reviewed. Using existing context...']);
+      } else {
+        setCurrentStatusMessage(null);
+        setStatusMessages([]);
       }
 
       setIsInitialReview(false);
@@ -438,7 +424,7 @@ export default function App() {
   }
 
   async function handleChatSubmit(question: string) {
-    if (!codexThreadRef.current && !debugMode) {
+    if (!codexThreadRef.current) {
       setCurrentStatusMessage('No active Codex thread for chat.');
       return;
     }
@@ -595,7 +581,7 @@ export default function App() {
       setCurrentJob(job);
 
       const shouldRunDeferredInitial =
-        (!codexThreadRef.current || initialReviewDeferredRef.current) && !debugMode;
+        !codexThreadRef.current || initialReviewDeferredRef.current;
 
       if (shouldRunDeferredInitial) {
         beginStream({ sessionId: job.sessionId, prompt: job.promptPreview });
@@ -674,11 +660,9 @@ export default function App() {
       }
 
       beginStream({ sessionId: job.sessionId, prompt: job.promptPreview });
-      if (!debugMode) {
-        const currentThreadId = codexThreadRef.current?.id ?? null;
-        if (currentThreadId) {
-          setThreadId(currentThreadId);
-        }
+      const currentThreadId = codexThreadRef.current?.id ?? null;
+      if (currentThreadId) {
+        setThreadId(currentThreadId);
       }
       try {
         const result = await performIncrementalReview(
@@ -729,16 +713,7 @@ export default function App() {
           }
         }
 
-        setCurrentStatusMessage(debugMode
-          ? [
-              'Debug mode active — Codex agent bypassed.',
-              `Session ID: ${job.sessionId}`,
-              `Transcript: ${job.transcriptPath}`,
-              result.debugInfo?.artifactPath ? `Debug context artifact: ${result.debugInfo.artifactPath}` : '',
-            ]
-              .filter(Boolean)
-              .join(' • ')
-          : null);
+        setCurrentStatusMessage(null);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
         setCurrentStatusMessage(`Review failed: ${message}`);
@@ -977,7 +952,7 @@ export default function App() {
       {screen === 'running' && (
         <Box marginTop={1}>
           <Text dimColor>
-            Codex thread: {debugMode ? 'Debug mode (no thread)' : threadId ?? 'Establishing…'}
+            Codex thread: {threadId ?? 'Establishing…'}
           </Text>
         </Box>
       )}

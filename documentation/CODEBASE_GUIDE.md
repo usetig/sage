@@ -666,20 +666,18 @@ export async function runInitialReview(
 ```
 1. Extract turns from JSONL
 2. Build initial prompt payload
-3. Write debug artifact (always)
-4. If debug mode:
-   - Return mock critique
-5. Load thread metadata
-6. Get or create Codex thread
-7. Check if thread resumed:
+3. Write artifact to `.debug/` (always)
+4. Load thread metadata
+5. Get or create Codex thread
+6. Check if thread resumed:
    a. If resumed && no new turns:
       → Return cached critique (isFreshCritique: false)
    b. If resumed && new turns:
       → Review only new turns
    c. If new thread:
       → Full initial review
-8. Save thread metadata
-9. Return ReviewResult
+7. Save thread metadata
+8. Return ReviewResult
 ```
 
 **Resume Detection Logic** (lines 94-152):
@@ -718,12 +716,10 @@ if (isResumedThread && !hasNewTurns) {
 ```
 1. Validate turns exist
 2. Build followup prompt payload
-3. Write debug artifact
-4. If debug mode:
-   → Return mock critique
-5. Validate thread exists
-6. Call runFollowupReview()
-7. Return ReviewResult
+3. Write artifact to `.debug/` (always)
+4. Validate thread exists
+5. Call runFollowupReview()
+6. Return ReviewResult
 ```
 
 **Timeout Handling**: Both initial and incremental reviews have 5-minute timeouts (lines 116-117, 234-236).
@@ -839,23 +835,13 @@ export async function saveThreadMetadata(
 
 **Safety**: Prevents crashes from corrupted cache files.
 
-### `src/lib/debug.ts` - Debug Mode & Artifacts
+### `src/lib/debug.ts` - Artifact Generation
 
-**Purpose**: Debug mode utilities and artifact generation.
+**Purpose**: Artifact generation utilities for inspecting Codex prompts.
 
-**Debug Mode Detection** (lines 4-7):
+**Artifact Generation** (`writeDebugReviewArtifact()`):
 
-```typescript
-const DEBUG_VALUE = process.env.SAGE_DEBUG ?? '';
-const NORMALIZED = DEBUG_VALUE.trim().toLowerCase();
-export const DEBUG_MODE = NORMALIZED === '1' || NORMALIZED === 'true' || NORMALIZED === 'yes' || NORMALIZED === 'on';
-```
-
-**Activation**: Set `SAGE_DEBUG=1` (or `true`, `yes`, `on`)
-
-**Artifact Generation** (`writeDebugReviewArtifact()`, lines 36-87):
-
-**Always Created** (not just in debug mode):
+**Always Created** (for all reviews):
 
 ```
 .debug/review-{sanitized-prompt-label}.txt
@@ -883,9 +869,9 @@ CONTEXT (Conversation Turns)
 {contextText}
 ```
 
-**Purpose**: Allows inspection of exactly what was sent to Codex, even in production runs.
+**Purpose**: Allows inspection of exactly what was sent to Codex during reviews. Useful for debugging and understanding how Sage formulates critiques.
 
-**Filename Sanitization** (`sanitizeFilename()`, lines 20-26):
+**Filename Sanitization** (`sanitizeFilename()`):
 
 - Replaces spaces with hyphens
 - Removes non-alphanumeric characters (except `-`, `_`, `.`)
@@ -1616,24 +1602,6 @@ tsx src/lib/codex.test.ts
 ```
 
 **No Test Framework**: Tests use Node's built-in `assert` module.
-
-### Debug Mode
-
-**Purpose**: Test end-to-end flow without Codex calls.
-
-**Activation**: `SAGE_DEBUG=1 npm start`
-
-**Behavior**:
-- Skips Codex API calls
-- Returns mock critiques
-- Still writes debug artifacts
-- UI shows "Debug mode active"
-
-**Use Cases**:
-- Testing UI flow
-- Validating prompt construction
-- Testing queue processing
-- Offline development
 
 ---
 

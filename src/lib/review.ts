@@ -9,7 +9,7 @@ import {
   codexInstance,
 } from './codex.js';
 import { extractTurns, type TurnSummary } from './jsonl.js';
-import { isDebugMode, writeDebugReviewArtifact } from './debug.js';
+import { writeDebugReviewArtifact } from './debug.js';
 import { getOrCreateThread, loadThreadMetadata, saveThreadMetadata, updateThreadTurnCount } from './threads.js';
 
 export interface ReviewResult {
@@ -38,7 +38,6 @@ export async function performInitialReview(
   onStreamEvent?: (event: StreamEvent) => void,
 ): Promise<InitialReviewResult> {
   const { sessionId, transcriptPath, lastReviewedUuid } = session;
-  const debug = isDebugMode();
 
   onProgress?.('reading conversation history...');
   const { turns, latestTurnUuid } = await extractTurns({ transcriptPath });
@@ -102,44 +101,6 @@ export async function performInitialReview(
     sessionId,
     reviewType: 'initial',
   });
-
-  if (debug) {
-    onProgress?.('[Debug] Skipping Codex critique.');
-    const debugWhy = [
-      'Debug mode active — Codex call skipped.',
-      `Session ID: ${sessionId}`,
-      `Transcript: ${transcriptPath}`,
-      `Context file: ${artifactPath}`,
-      '',
-      'Prompt text:',
-      promptPayload.promptText,
-    ].join('\n');
-
-    const debugEvent = makeDebugStreamEvent('Debug mode active — streaming disabled.');
-    onStreamEvent?.(debugEvent);
-
-    return {
-      critique: {
-        verdict: 'Approved',
-        why: debugWhy,
-        alternatives: '',
-        questions: '',
-        message_for_agent: '',
-      },
-      transcriptPath,
-      completedAt: new Date().toISOString(),
-      latestPrompt: latestTurn?.user,
-      thread: null,
-      turns,
-      debugInfo: {
-        artifactPath,
-        promptText: promptPayload.promptText,
-      },
-      turnSignature: latestTurnUuid ?? undefined,
-      isFreshCritique: true,
-      streamEvents: [debugEvent],
-    };
-  }
 
   const metadata = await loadThreadMetadata(sessionId);
   const thread = await getOrCreateThread(codexInstance, sessionId, onProgress);
@@ -253,7 +214,6 @@ export async function performIncrementalReview(
   if (!turns.length) {
     throw new Error('No new turns provided for incremental review.');
   }
-  const debug = isDebugMode();
 
   const promptPayload = buildFollowupPromptPayload({ sessionId, newTurns: turns, isPartial });
 
@@ -264,39 +224,6 @@ export async function performIncrementalReview(
     sessionId,
     reviewType: 'incremental',
   });
-
-  if (debug) {
-    const debugEvent = makeDebugStreamEvent('Debug mode active — streaming disabled.');
-    onStreamEvent?.(debugEvent);
-    return {
-      critique: {
-        verdict: 'Approved',
-        why: [
-          'Debug mode active — Codex call skipped.',
-          `Session ID: ${sessionId}`,
-          `Transcript: ${transcriptPath}`,
-          `Context file: ${artifactPath}`,
-          '',
-          'Prompt text:',
-          promptPayload.promptText,
-        ].join('\n'),
-        alternatives: '',
-        questions: '',
-        message_for_agent: '',
-      },
-      transcriptPath,
-      completedAt: new Date().toISOString(),
-      latestPrompt: turns[turns.length - 1]?.user,
-      turnSignature: latestTurnSignature ?? undefined,
-      debugInfo: {
-        artifactPath,
-        promptText: promptPayload.promptText,
-      },
-      isFreshCritique: true,
-      streamEvents: [debugEvent],
-      isPartial,
-    };
-  }
 
   if (!thread) {
     throw new Error('No active Codex thread to continue the review.');
@@ -339,37 +266,11 @@ function previewText(text: string, maxLength = 160): string {
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
-function makeDebugStreamEvent(message: string): StreamEvent {
-  const timestamp = Date.now();
-  return {
-    id: `debug-${timestamp}-${Math.random().toString(16).slice(2)}`,
-    timestamp,
-    tag: 'status',
-    message,
-  };
-}
-
 export async function chatWithSage(
   thread: Thread | null,
   userQuestion: string,
   sessionId: string,
 ): Promise<{ response: string }> {
-  const debug = isDebugMode();
-
-  if (debug) {
-    return {
-      response: [
-        'Debug mode active — Codex chat skipped.',
-        `Session ID: ${sessionId}`,
-        '',
-        'Your question:',
-        userQuestion,
-        '',
-        'In a real run, Sage would respond to your question here.',
-      ].join('\n'),
-    };
-  }
-
   if (!thread) {
     throw new Error('No active Codex thread for chat.');
   }

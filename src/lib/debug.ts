@@ -1,16 +1,7 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 
-const DEBUG_VALUE = process.env.SAGE_DEBUG ?? '';
-const NORMALIZED = DEBUG_VALUE.trim().toLowerCase();
-
-export const DEBUG_MODE = NORMALIZED === '1' || NORMALIZED === 'true' || NORMALIZED === 'yes' || NORMALIZED === 'on';
-
 const DEBUG_DIR = path.join(process.cwd(), '.debug');
-
-export function isDebugMode(): boolean {
-  return DEBUG_MODE;
-}
 
 export async function ensureDebugDir(): Promise<string> {
   await fs.mkdir(DEBUG_DIR, { recursive: true });
