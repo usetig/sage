@@ -6,7 +6,6 @@ interface CritiqueCardProps {
   critique: CritiqueResponse;
   prompt?: string;
   index: number;
-  hideWhy?: boolean;
 }
 
 const VERDICT_SYMBOLS = {
@@ -25,7 +24,6 @@ export function CritiqueCard({
   critique,
   prompt,
   index,
-  hideWhy = false,
 }: CritiqueCardProps) {
   const symbol = VERDICT_SYMBOLS[critique.verdict] || '•';
   const color = VERDICT_COLORS[critique.verdict] || 'white';
@@ -45,7 +43,7 @@ export function CritiqueCard({
         </Text>
       </Box>
 
-      {!hideWhy && (
+      {critique.verdict !== 'Approved' && (
         <Box marginTop={1} flexDirection="column">
           <Text bold>WHY</Text>
           <Text>{critique.why}</Text>

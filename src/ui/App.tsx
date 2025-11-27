@@ -70,7 +70,6 @@ export default function App() {
   const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [reviews, setReviews] = useState<CompletedReview[]>([]);
-  const [collapsedWhy, setCollapsedWhy] = useState<boolean[]>([]);
   const [queue, setQueue] = useState<ReviewQueueItem[]>([]);
   const [currentJob, setCurrentJob] = useState<ReviewQueueItem | null>(null);
   const [isInitialReview, setIsInitialReview] = useState(false);
@@ -147,10 +146,6 @@ export default function App() {
       }
       if (lower === 'm') {
         void handleManualSync();
-        return;
-      }
-      if (lower === 'w') {
-        toggleAllApprovedWhy();
         return;
       }
       if (lower === 'c') {
@@ -264,7 +259,6 @@ export default function App() {
 
     if (restoredReviews.length) {
       setReviews(restoredReviews);
-      setCollapsedWhy(restoredReviews.map((item) => item.critique.verdict === 'Approved'));
       setStatusMessages([`Restored ${restoredReviews.length} previous review${restoredReviews.length === 1 ? '' : 's'}.`]);
     } else {
       setStatusMessages([]);
@@ -306,7 +300,6 @@ export default function App() {
         if (!signatureStillPresent && reviewCacheRef.current.reviews.length) {
           reviewCacheRef.current = null;
           setReviews([]);
-          setCollapsedWhy([]);
           await deleteReviewCache(session.sessionId);
           setCurrentStatusMessage('Cleared stale review history for this session.');
           setStatusMessages((prev) => [
@@ -479,7 +472,6 @@ export default function App() {
     workerRunningRef.current = false;
     setCurrentJob(null);
     setReviews([]);
-    setCollapsedWhy([]);
     setStatusMessages([]);
     setCurrentStatusMessage(null);
     setActiveSession(null);
@@ -509,17 +501,12 @@ export default function App() {
     if (review.isFreshCritique === false) {
       return;
     }
-    let appended = false;
     setReviews((prev) => {
       if (review.turnSignature && prev.some((item) => item.turnSignature === review.turnSignature)) {
         return prev;
       }
-      appended = true;
       return [...prev, review];
     });
-    if (appended) {
-      setCollapsedWhy((prev) => [...prev, review.critique.verdict === 'Approved']);
-    }
     void persistReview(review);
   }
 
@@ -549,36 +536,6 @@ export default function App() {
     }
   }
 
-  function toggleWhyCollapse(index: number): void {
-    setCollapsedWhy((prev) => {
-      if (index < 0 || index >= prev.length) {
-        return prev;
-      }
-      const next = [...prev];
-      next[index] = !next[index];
-      return next;
-    });
-  }
-
-  function toggleAllApprovedWhy(): void {
-    setCollapsedWhy((prev) => {
-      // Check if any approved reviews have WHY collapsed
-      const hasAnyCollapsed = reviews.some((review, index) =>
-        review.critique.verdict === 'Approved' && prev[index] === true
-      );
-
-      // Create new array with updated values for approved reviews
-      const next = [...prev];
-      reviews.forEach((review, index) => {
-        if (review.critique.verdict === 'Approved') {
-          // If any are collapsed, expand all. Otherwise, collapse all.
-          next[index] = !hasAnyCollapsed;
-        }
-      });
-
-      return next;
-    });
-  }
 
   function enqueueJob(job: ReviewQueueItem) {
     if (!job.turns.length) return;
@@ -965,7 +922,6 @@ export default function App() {
                 critique={item.critique}
                 prompt={item.latestPrompt}
                 index={index + 1}
-                hideWhy={collapsedWhy[index] ?? false}
               />
               ))}
 
@@ -1148,7 +1104,6 @@ function formatStatus(
   manualSyncTriggered: boolean,
 ): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string; queuedItems: ReviewQueueItem[] } {
   const manualSyncLabel = manualSyncTriggered ? 'M to manually sync (triggered)' : 'M to manually sync';
-  const toggleWhyLabel = 'W to toggle WHY';
   const streamOverlayLabel = 'Ctrl+O to view stream';
   const queuedItems = currentJob ? queue.slice(1) : queue;
   const pendingCount = queuedItems.length;
@@ -1157,7 +1112,7 @@ function formatStatus(
     return {
       status: 'Status: ⏵ Running initial review...',
       statusMessage: 'running initial review...',
-      keybindings: `${streamOverlayLabel} • ${manualSyncLabel} • ${toggleWhyLabel}`,
+      keybindings: `${streamOverlayLabel} • ${manualSyncLabel}`,
       isReviewing: true,
       queuedItems,
     };
@@ -1172,7 +1127,7 @@ function formatStatus(
     return {
       status: `Status: ⏵ Reviewing response for "${currentJob.promptPreview}"${turnInfo}${queueInfo}`,
       statusMessage: `reviewing response for "${currentJob.promptPreview}"${queueSuffix}`,
-      keybindings: `${streamOverlayLabel} • ${manualSyncLabel} • ${toggleWhyLabel}`,
+      keybindings: `${streamOverlayLabel} • ${manualSyncLabel}`,
       isReviewing: true,
       queuedItems,
     };
@@ -1180,7 +1135,7 @@ function formatStatus(
 
   return {
     status: 'Status: ⏺ Waiting for Claude response',
-    keybindings: `${streamOverlayLabel} • C to chat with Sage • ${toggleWhyLabel} • ${manualSyncLabel}`,
+    keybindings: `${streamOverlayLabel} • C to chat with Sage • ${manualSyncLabel}`,
     isReviewing: false,
     queuedItems,
   };

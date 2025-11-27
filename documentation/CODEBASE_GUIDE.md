@@ -439,7 +439,7 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 **Keyboard Controls**:
 
 - **Session List**: ↑/↓ navigate, Enter select, R refresh
-- **Running Mode**: Ctrl+O stream overlay, M manual sync, B back to list, W toggle WHY, C chat
+- **Running Mode**: Ctrl+O stream overlay, M manual sync, B back to list, C chat
 - **Chat**: ESC exit, Enter send
 
 **Performance Considerations**:
@@ -447,7 +447,7 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 - Queue processing uses refs to avoid re-renders during processing
 - Signal deduplication prevents processing same file twice
 - Debounced status messages prevent UI flicker
-- Collapsed WHY sections reduce terminal scrolling
+- WHY section hidden for Approved verdicts reduces terminal noise
 
 ### `src/lib/jsonl.ts` - JSONL Transcript Parser
 
@@ -1045,7 +1045,6 @@ interface CritiqueCardProps {
   critique: CritiqueResponse;
   prompt?: string;
   index: number;
-  hideWhy?: boolean;
 }
 ```
 
@@ -1057,7 +1056,7 @@ interface CritiqueCardProps {
   - `✗` Critical Issues (red)
 
 - **Sections**:
-  - WHY (collapsible if `hideWhy=true`)
+  - WHY (only shown for non-Approved verdicts)
   - ALTERNATIVES (blue, only if non-empty)
   - QUESTIONS (magenta, only if non-empty)
   - MESSAGE FOR AGENT (cyan, only if non-empty)

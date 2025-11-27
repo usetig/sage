@@ -59,7 +59,6 @@ This guide documents the current continuous-review implementation that rides on 
 - `Ctrl+O` — Toggle the live Codex activity stream overlay.
 - `B` — Exit continuous mode and return to the session list.
 - `M` — Manually rescan `~/.sage/{project-path}/runtime/needs-review/` (useful after resolving hook issues or when running in debug mode).
-- `W` — Toggle the WHY section for approved critiques (collapses/expands in batch).
 - `C` — Enter chat mode to ask Sage questions about your codebase or the latest critique (see `documentation/specs/interactive-followup-design.md`).
 
 Status messaging reflects the current stage (initial review, incremental review, waiting, debug mode). When debug mode is active the status banner and critique cards explicitly mention it and link to the artifact path.

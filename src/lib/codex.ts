@@ -171,7 +171,7 @@ export function buildInitialPromptPayload(
     '# Output Format',
     'Deliver a structured critique card with these sections:',
     '- Verdict: "Approved" | "Concerns" | "Critical Issues"',
-    '- Why: Your main reasoning (required)',
+    '- Why: Your main reasoning (return empty string "" for "Approved" verdict; required with content for "Concerns" or "Critical Issues")',
     '- Alternatives: Suggested alternative approaches (empty string if not applicable)',
     '- Questions: Clarification questions for the developer (empty string if not applicable)',
     '- message_for_agent: Direct communication with Claude Code agent (empty string if not applicable)',
@@ -255,7 +255,7 @@ export function buildFollowupPromptPayload(
     '# Output Format',
     'Deliver a structured critique card with these sections:',
     '- Verdict: "Approved" | "Concerns" | "Critical Issues"',
-    '- Why: Your main reasoning (required)',
+    '- Why: Your main reasoning (return empty string "" for "Approved" verdict; required with content for "Concerns" or "Critical Issues")',
     '- Alternatives: Suggested alternative approaches (empty string if not applicable)',
     '- Questions: Clarification questions for the developer (empty string if not applicable)',
     '- message_for_agent: Direct communication with Claude Code agent (empty string if not applicable)',
@@ -563,13 +563,22 @@ function isCritiqueResponse(value: any): value is CritiqueResponse {
     return false;
   }
 
-  return (
+  const hasRequiredFields = (
     typeof value.verdict === 'string'
     && typeof value.why === 'string'
     && typeof value.alternatives === 'string'
     && typeof value.questions === 'string'
     && typeof value.message_for_agent === 'string'
   );
+
+  if (!hasRequiredFields) return false;
+
+  // Enforce non-empty why for non-Approved verdicts
+  if (value.verdict !== 'Approved' && value.why.trim() === '') {
+    return false;
+  }
+
+  return true;
 }
 
 function makeStreamEvent(tag: StreamEventTag, message: string, timestamp: number): StreamEvent {
