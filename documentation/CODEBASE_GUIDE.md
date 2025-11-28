@@ -431,7 +431,7 @@ const processedSignalsRef = useRef<Set<string>>(new Set());
 **Screen State Machine**:
 
 ```typescript
-type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
+type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'settings';
 ```
 
 - `loading`: Initial session discovery
@@ -439,10 +439,12 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
 - `session-list`: Session picker (arrow keys + Enter)
 - `running`: Continuous review mode (watching for signals)
 - `chat`: Chat mode with Sage (press 'C' in running mode)
+- `settings`: Model selection screen (press 'S' in session-list)
 
 **Keyboard Controls**:
 
-- **Session List**: ↑/↓ navigate, Enter select, R refresh
+- **Session List**: ↑/↓ navigate, Enter select, R refresh, S settings
+- **Settings**: ↑/↓ navigate models, Enter select, ESC/B back
 - **Running Mode**: Ctrl+O stream overlay, M manual sync, B back to list, C chat
 - **Chat**: ESC exit, Enter send
 
@@ -1117,6 +1119,68 @@ const terminalWidth = (stdout?.columns ?? 80) - 2;
 - Updates live during a review and keeps the most recent stream log available after completion.
 - Shows the active session/prompt context plus instructions for exiting (`Ctrl+O` again).
 
+### `src/lib/models.ts` - Model Configuration
+
+**Purpose**: Defines available AI models for Sage to use.
+
+**Exports**:
+
+```typescript
+export interface ModelConfig {
+  id: string;    // Model identifier (e.g., 'gpt-5.1-codex')
+  name: string;  // Display name (e.g., 'GPT-5.1 Codex')
+}
+
+export const AVAILABLE_MODELS: ModelConfig[];  // List of available models
+export const DEFAULT_MODEL: string;            // Default model ID ('gpt-5.1-codex')
+export type ModelId = (typeof AVAILABLE_MODELS)[number]['id'];  // Union of model IDs
+```
+
+**Available Models**:
+- GPT-5.1 Codex, GPT-5.1 Codex Mini
+- GPT-5.1, GPT-5, GPT-5 Mini, GPT-5 Nano
+- GPT-4.1, GPT-4.1 Mini, GPT-4.1 Nano
+
+### `src/lib/settings.ts` - User Settings Persistence
+
+**Purpose**: Manages user preferences storage and retrieval.
+
+**Storage Location**: `~/.sage/settings.json` (global, not per-project)
+
+**Key Functions**:
+
+1. **`getSettingsPath()`**: Returns path to settings file
+2. **`loadSettings()`**: Loads settings from disk, returns defaults if missing
+3. **`saveSettings()`**: Saves settings to disk
+
+**Settings Interface**:
+
+```typescript
+export interface SageSettings {
+  selectedModel: string;  // Currently selected model ID
+}
+```
+
+### `src/ui/SettingsScreen.tsx` - Model Selection UI
+
+**Purpose**: Terminal UI for selecting AI models.
+
+**Props**:
+
+```typescript
+interface SettingsScreenProps {
+  currentModel: string;                    // Currently selected model
+  onSelectModel: (modelId: string) => void; // Called when user selects model
+  onBack: () => void;                      // Called when user exits settings
+}
+```
+
+**Features**:
+- Lists all available models from `AVAILABLE_MODELS`
+- Shows checkmark (✓) next to current selection
+- Arrow key navigation with Enter to select
+- ESC or B to go back
+
 ### `src/ui/Spinner.tsx` - Loading Spinner
 
 **Purpose**: Animated spinner for loading states.
@@ -1561,6 +1625,9 @@ const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
 ### File System Integration
 
 **Runtime Directories**:
+
+Global settings are stored at the root level:
+- `~/.sage/settings.json`: User preferences (model selection)
 
 Each project gets its own directory under `~/.sage/` based on its full path (e.g., `/Users/you/projects/foo` → `~/.sage/Users-you-projects-foo/`):
 

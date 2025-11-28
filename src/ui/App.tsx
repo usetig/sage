@@ -25,10 +25,13 @@ import {
   type SessionReviewCache,
 } from '../lib/reviewsCache.js';
 import { StreamOverlay } from './StreamOverlay.js';
+import { SettingsScreen } from './SettingsScreen.js';
 import { getQueueDir } from '../lib/paths.js';
 import { ensureHooksConfigured } from '../scripts/configureHooks.js';
+import { loadSettings, saveSettings } from '../lib/settings.js';
+import { DEFAULT_MODEL } from '../lib/models.js';
 
-type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat';
+type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'settings';
 
 const repositoryPath = path.resolve(process.cwd());
 
@@ -93,6 +96,9 @@ export default function App() {
   const [hooksJustConfigured, setHooksJustConfigured] = useState(false);
   const [hookConfigWarning, setHookConfigWarning] = useState<string | null>(null);
 
+  // Model selection state
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
   const watcherRef = useRef<FSWatcher | null>(null);
@@ -108,6 +114,14 @@ export default function App() {
 
   useEffect(() => {
     const init = async () => {
+      // Load user settings (non-blocking on failure)
+      try {
+        const settings = await loadSettings();
+        setSelectedModel(settings.selectedModel);
+      } catch {
+        // Use default model if settings fail to load
+      }
+
       // Configure hooks first (non-blocking on failure)
       try {
         const result = await ensureHooksConfigured();
@@ -140,6 +154,11 @@ export default function App() {
     if (screen === 'session-list' && sessions.length) {
       if (normalizedInput === 'r') {
         void reloadSessions();
+        return;
+      }
+
+      if (normalizedInput === 's') {
+        setScreen('settings');
         return;
       }
 
@@ -301,6 +320,7 @@ export default function App() {
         { sessionId: session.sessionId, transcriptPath: session.transcriptPath, lastReviewedUuid },
         (message) => setCurrentStatusMessage(message),
         appendStreamEvent,
+        selectedModel,
       );
 
       const streamPrompt = result.latestPrompt
@@ -476,6 +496,16 @@ export default function App() {
     }
   }
 
+  async function handleModelSelect(modelId: string) {
+    setSelectedModel(modelId);
+    try {
+      await saveSettings({ selectedModel: modelId });
+    } catch {
+      // Ignore save errors - settings are still applied for this session
+    }
+    setScreen('session-list');
+  }
+
   async function resetContinuousState() {
     await cleanupWatcher();
     if (manualSyncTimeoutRef.current) {
@@ -594,6 +624,7 @@ export default function App() {
             },
             (message) => setCurrentStatusMessage(message),
             appendStreamEvent,
+            selectedModel,
           );
 
           const deferredPrompt = deferredResult.latestPrompt
@@ -988,6 +1019,9 @@ export default function App() {
               {hookConfigWarning && (
                 <Text color="yellow">⚠ {hookConfigWarning}</Text>
               )}
+              <Box marginBottom={1}>
+                <Text dimColor>Model: {selectedModel}</Text>
+              </Box>
               <Text>Select a Claude session to review:</Text>
               <Box flexDirection="column" marginTop={1}>
                 {sessions.map((session, index) => (
@@ -1000,9 +1034,17 @@ export default function App() {
                 ))}
               </Box>
               <Box marginTop={1}>
-                <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh.</Text>
+                <Text dimColor>Use ↑ ↓ to move, ↵ to review, R to refresh, S for settings.</Text>
               </Box>
             </Box>
+          )}
+
+          {screen === 'settings' && (
+            <SettingsScreen
+              currentModel={selectedModel}
+              onSelectModel={handleModelSelect}
+              onBack={() => setScreen('session-list')}
+            />
           )}
 
       {screen === 'running' && activeSession && (

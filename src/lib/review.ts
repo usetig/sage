@@ -36,6 +36,7 @@ export async function performInitialReview(
   session: { sessionId: string; transcriptPath: string; lastReviewedUuid: string | null },
   onProgress?: (message: string) => void,
   onStreamEvent?: (event: StreamEvent) => void,
+  model?: string,
 ): Promise<InitialReviewResult> {
   const { sessionId, transcriptPath, lastReviewedUuid } = session;
 
@@ -103,7 +104,7 @@ export async function performInitialReview(
   });
 
   const metadata = await loadThreadMetadata(sessionId);
-  const thread = await getOrCreateThread(codexInstance, sessionId, onProgress);
+  const thread = await getOrCreateThread(codexInstance, sessionId, onProgress, model);
 
   const isResumedThread = metadata !== null;
   const currentTurnCount = turns.length;
@@ -161,6 +162,7 @@ export async function performInitialReview(
         thread,
         promptPayload,
         onEvent: onStreamEvent,
+        model,
       },
     );
 

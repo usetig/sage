@@ -105,13 +105,14 @@ export async function getOrCreateThread(
   codex: Codex,
   sessionId: string,
   onProgress?: (message: string) => void,
+  model?: string,
 ): Promise<Thread> {
   const metadata = await loadThreadMetadata(sessionId);
 
   if (metadata) {
     onProgress?.('loading previous context...');
     try {
-      const thread = codex.resumeThread(metadata.threadId, getConfiguredThreadOptions());
+      const thread = codex.resumeThread(metadata.threadId, getConfiguredThreadOptions(model));
       return thread;
     } catch (err) {
       // Thread couldn't be resumed (might have been deleted on Codex side)
@@ -121,7 +122,7 @@ export async function getOrCreateThread(
 
   // Create new thread
   onProgress?.('initializing review agent...');
-  const thread = codex.startThread(getConfiguredThreadOptions());
+  const thread = codex.startThread(getConfiguredThreadOptions(model));
 
   // Thread ID might not be immediately available - this is okay
   // We'll save metadata after the first successful review instead

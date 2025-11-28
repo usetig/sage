@@ -46,16 +46,11 @@ const singleton = new Codex();
 // Export the singleton for use in thread management
 export const codexInstance = singleton;
 
-const DEFAULT_THREAD_OPTIONS: ThreadOptions = (() => {
-  const model = "gpt-5.1"; // process.env.SAGE_CODEX_MODEL?.trim();
+export function getConfiguredThreadOptions(model?: string): ThreadOptions {
   if (model) {
     return { model };
   }
   return {};
-})();
-
-export function getConfiguredThreadOptions(): ThreadOptions {
-  return { ...DEFAULT_THREAD_OPTIONS };
 }
 
 export interface PromptPayload {
@@ -84,6 +79,7 @@ export interface RunReviewOptions {
   thread?: Thread;
   promptPayload?: PromptPayload;
   onEvent?: (event: StreamEvent) => void;
+  model?: string;
 }
 
 export interface RunInitialReviewResult {
@@ -103,7 +99,7 @@ export async function runInitialReview(
   context: InitialReviewContext,
   options?: RunReviewOptions,
 ): Promise<RunInitialReviewResult> {
-  const reviewThread = options?.thread ?? singleton.startThread(getConfiguredThreadOptions());
+  const reviewThread = options?.thread ?? singleton.startThread(getConfiguredThreadOptions(options?.model));
   const payload = options?.promptPayload ?? buildInitialPromptPayload(context);
   const { critique, events } = await executeStreamedTurn(reviewThread, payload.prompt, options?.onEvent);
 

@@ -21,6 +21,7 @@ Coding agents like Claude Code can sound confident while being wrong or incomple
 - **Thread persistence** - Automatically resumes context when re-selecting sessions
 - **FIFO queue** - Handles multiple turns gracefully, reviews in order
 - **Interactive TUI** - Session picker and real-time critique display
+- **Model selection** - Choose from multiple AI models via settings screen
 - **Read-only by design** - Never modifies your code
 
 ## Prerequisites
@@ -107,12 +108,20 @@ Each review includes:
 - `↑` / `↓` - Navigate sessions
 - `Enter` - Select session to review
 - `R` - Refresh session list
+- `S` - Open settings (model selection)
 - `Ctrl+C` - Exit
 
 ### Continuous Review Mode
 - `M` - Manually rescan hook signals (force review)
+- `C` - Chat with Sage about the current review
 - `B` - Back to session picker
+- `Ctrl+O` - Toggle stream overlay
 - `Ctrl+C` - Exit
+
+### Settings Screen
+- `↑` / `↓` - Navigate models
+- `Enter` - Select model
+- `Esc` / `B` - Back to session picker
 
 ## Project Structure
 
@@ -126,12 +135,15 @@ sage/
 │   │   ├── jsonl.ts          # Claude JSONL parsing utilities
 │   │   ├── review.ts         # Review orchestration
 │   │   ├── threads.ts        # Thread metadata & resumption
+│   │   ├── models.ts         # Available AI models configuration
+│   │   ├── settings.ts       # User settings persistence
 │   │   └── debug.ts          # Artifact utilities
 │   ├── hooks/                # Claude hook shim (invoked by Claude Code)
 │   │   └── sageHook.ts
 │   ├── ui/                   # Terminal UI components
 │   │   ├── App.tsx           # Main TUI orchestrator
-│   │   └── CritiqueCard.tsx  # Critique renderer
+│   │   ├── CritiqueCard.tsx  # Critique renderer
+│   │   └── SettingsScreen.tsx # Model selection UI
 │   └── scripts/              # Developer utilities (hook installer)
 │       └── configureHooks.ts
 ├── .debug/                    # Artifact files written for inspection
@@ -195,9 +207,28 @@ Sage **automatically configures hooks on first run**. When you start Sage in a n
 
 Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `~/.sage/{project-path}/runtime/`.
 
+### Model Selection
+
+Sage supports multiple AI models for code review. Press `S` from the session picker to open the settings screen and choose your preferred model.
+
+Available models:
+- GPT-5.1 Codex (default)
+- GPT-5.1 Codex Mini
+- GPT-5.1
+- GPT-5
+- GPT-5 Mini
+- GPT-5 Nano
+- GPT-4.1
+- GPT-4.1 Mini
+- GPT-4.1 Nano
+
+Your model selection is stored in `~/.sage/settings.json` and persists across sessions.
+
 ### Directory Structure
 
 **Global Sage Directory** (`~/.sage/`):
+
+- `~/.sage/settings.json` - User preferences (model selection)
 
 Each project gets its own subdirectory based on its full path (e.g., `/Users/you/projects/myapp` → `~/.sage/Users-you-projects-myapp/`):
 
