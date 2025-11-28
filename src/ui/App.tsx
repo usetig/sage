@@ -326,7 +326,7 @@ export default function App() {
     } else {
       setStatusMessages([]);
     }
-    updateCurrentStatus('loading session context...', true);
+    updateCurrentStatus('loading session context...', false);
 
     activeSessionRef.current = session;
     setActiveSession(session);
@@ -366,10 +366,12 @@ export default function App() {
           setReviews([]);
           await deleteReviewCache(session.sessionId);
           setCurrentStatusMessage('Cleared stale review history for this session.');
-          setStatusMessages((prev) => [
-            ...prev,
-            'Cached critiques no longer match this session; cleared stored history.',
-          ]);
+          if (debugModeRef.current) {
+            setStatusMessages((prev) => [
+              ...prev,
+              'Cached critiques no longer match this session; cleared stored history.',
+            ]);
+          }
         }
       }
 
@@ -402,7 +404,7 @@ export default function App() {
           setStatusMessages(['Initial review paused until Claude finishes its first response.']);
         }
       } else if (resumedWithoutChanges) {
-        updateCurrentStatus('Resuming Sage thread...', true);
+        updateCurrentStatus('Resuming Sage thread...', false);
         resumeStatusTimeoutRef.current = setTimeout(() => {
           setCurrentStatusMessage(null);
           resumeStatusTimeoutRef.current = null;
@@ -439,7 +441,7 @@ export default function App() {
 
     // Show temporary feedback
     setManualSyncTriggered(true);
-    updateCurrentStatus('running manual sync...', true);
+    updateCurrentStatus('running manual sync...', false);
 
     // Clear any existing timeout
     if (manualSyncTimeoutRef.current) {
@@ -461,7 +463,9 @@ export default function App() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Manual sync failed.';
       setCurrentStatusMessage(`Manual sync error: ${message}`);
-      setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
+      if (debugModeRef.current) {
+        setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
+      }
       setManualSyncTriggered(false);
     }
   }
@@ -613,10 +617,12 @@ export default function App() {
     try {
       await saveReviewCache(updatedCache);
     } catch (error: any) {
-      setStatusMessages((prev) => [
-        ...prev,
-        `Failed to persist review history: ${error?.message ?? String(error)}`,
-      ]);
+      if (debugModeRef.current) {
+        setStatusMessages((prev) => [
+          ...prev,
+          `Failed to persist review history: ${error?.message ?? String(error)}`,
+        ]);
+      }
     }
   }
 
@@ -713,7 +719,9 @@ export default function App() {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Initial review failed. Please try again.';
           setCurrentStatusMessage(message);
-          setStatusMessages((prev) => [...prev, message]);
+          if (debugModeRef.current) {
+            setStatusMessages((prev) => [...prev, message]);
+          }
           setIsStreamLive(false);
         }
 
@@ -784,7 +792,9 @@ export default function App() {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Queued review failed.';
         setCurrentStatusMessage(`Review failed: ${message}`);
-        setStatusMessages((prev) => [...prev, `Review failed for "${job.promptPreview}": ${message}`]);
+        if (debugModeRef.current) {
+          setStatusMessages((prev) => [...prev, `Review failed for "${job.promptPreview}": ${message}`]);
+        }
         setIsStreamLive(false);
       }
 
@@ -873,7 +883,9 @@ export default function App() {
       enqueued = true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to process review signal.';
-      setStatusMessages((prev) => [...prev, message]);
+      if (debugModeRef.current) {
+        setStatusMessages((prev) => [...prev, message]);
+      }
     } finally {
       if (!enqueued) {
         processedSignalsRef.current.delete(filePath);
