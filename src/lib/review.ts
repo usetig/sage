@@ -34,19 +34,19 @@ export type InitialReviewResult = ReviewResult & {
 
 export async function performInitialReview(
   session: { sessionId: string; transcriptPath: string; lastReviewedUuid: string | null },
-  onProgress?: (message: string) => void,
+  onProgress?: (message: string, isDebug?: boolean) => void,
   onStreamEvent?: (event: StreamEvent) => void,
   model?: string,
 ): Promise<InitialReviewResult> {
   const { sessionId, transcriptPath, lastReviewedUuid } = session;
 
-  onProgress?.('reading conversation history...');
+  onProgress?.('reading conversation history...', true);
   const { turns, latestTurnUuid } = await extractTurns({ transcriptPath });
   const latestTurn = turns.length ? turns[turns.length - 1] : null;
   const latestPromptPreview = latestTurn?.user ? previewText(latestTurn.user) : '(none captured)';
 
   if (!turns.length) {
-    onProgress?.('Waiting for Claude to provide its first full response before reviewing.');
+    onProgress?.('Waiting for Claude to provide its first full response before reviewing.', true);
     return {
       critique: {
         verdict: 'Approved',
@@ -68,7 +68,7 @@ export async function performInitialReview(
   }
 
   if (latestTurn && latestTurn.agent && latestTurn.assistantUuid === undefined) {
-    onProgress?.('Claude is still responding — initial review will wait for completion.');
+    onProgress?.('Claude is still responding — initial review will wait for completion.', true);
     return {
       critique: {
         verdict: 'Approved',
@@ -116,7 +116,7 @@ export async function performInitialReview(
   let streamEvents: StreamEvent[] = [];
 
   if (isResumedThread && !hasNewTurns) {
-    onProgress?.('Resuming Sage thread...');
+    onProgress?.('Resuming Sage thread...', true);
     critique = {
       verdict: 'Approved',
       why: 'Session previously reviewed. Entering continuous mode with existing context.',
@@ -127,7 +127,7 @@ export async function performInitialReview(
     isFreshCritique = false;
     streamEvents = [];
   } else if (isResumedThread && hasNewTurns) {
-    onProgress?.('examining new dialogue...');
+    onProgress?.('examining new dialogue...', true);
     const newTurns = turns.slice(lastReviewedTurnCount);
 
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -146,7 +146,7 @@ export async function performInitialReview(
 
     await updateThreadTurnCount(sessionId, currentTurnCount);
   } else {
-    onProgress?.('analyzing codebase context...');
+    onProgress?.('analyzing codebase context...', true);
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
@@ -209,7 +209,7 @@ export interface IncrementalReviewRequest {
 
 export async function performIncrementalReview(
   request: IncrementalReviewRequest,
-  onProgress?: (message: string) => void,
+  onProgress?: (message: string, isDebug?: boolean) => void,
   onStreamEvent?: (event: StreamEvent) => void,
 ): Promise<ReviewResult> {
   const { sessionId, transcriptPath, thread, turns, latestTurnSignature, isPartial } = request;
@@ -231,7 +231,7 @@ export async function performIncrementalReview(
     throw new Error('No active Codex thread to continue the review.');
   }
 
-  onProgress?.('Sage is thinking...');
+  onProgress?.('Sage is thinking...', true);
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);

@@ -1,7 +1,7 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import chokidar, { FSWatcher } from 'chokidar';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Key } from 'ink';
 import type { Thread } from '@openai/codex-sdk';
@@ -99,6 +99,9 @@ export default function App() {
   // Model selection state
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
 
+  // Debug mode state
+  const [debugMode, setDebugMode] = useState(false);
+
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
   const watcherRef = useRef<FSWatcher | null>(null);
@@ -111,6 +114,18 @@ export default function App() {
   const activeSessionRef = useRef<ActiveSession | null>(null);
   const initialReviewDeferredRef = useRef(false);
   const streamEventsRef = useRef<StreamEvent[]>([]);
+  const debugModeRef = useRef(false);
+
+  // Helper functions for debug-aware logging
+  const addStatusMessage = useCallback((message: string, isDebug: boolean = false) => {
+    if (isDebug && !debugModeRef.current) return;
+    setStatusMessages((prev) => [...prev, message]);
+  }, []);
+
+  const updateCurrentStatus = useCallback((message: string | null, isDebug: boolean = false) => {
+    if (message !== null && isDebug && !debugModeRef.current) return;
+    setCurrentStatusMessage(message);
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -118,8 +133,10 @@ export default function App() {
       try {
         const settings = await loadSettings();
         setSelectedModel(settings.selectedModel);
+        setDebugMode(settings.debugMode);
+        debugModeRef.current = settings.debugMode;
       } catch {
-        // Use default model if settings fail to load
+        // Use defaults if settings fail to load
       }
 
       // Configure hooks first (non-blocking on failure)
@@ -300,11 +317,16 @@ export default function App() {
 
     if (restoredReviews.length) {
       setReviews(restoredReviews);
-      setStatusMessages([`Restored ${restoredReviews.length} previous review${restoredReviews.length === 1 ? '' : 's'}.`]);
+      // Only show "Restored" message in debug mode
+      if (debugModeRef.current) {
+        setStatusMessages([`Restored ${restoredReviews.length} previous review${restoredReviews.length === 1 ? '' : 's'}.`]);
+      } else {
+        setStatusMessages([]);
+      }
     } else {
       setStatusMessages([]);
     }
-    setCurrentStatusMessage('loading session context...');
+    updateCurrentStatus('loading session context...', true);
 
     activeSessionRef.current = session;
     setActiveSession(session);
@@ -318,7 +340,7 @@ export default function App() {
 
       const result = await performInitialReview(
         { sessionId: session.sessionId, transcriptPath: session.transcriptPath, lastReviewedUuid },
-        (message) => setCurrentStatusMessage(message),
+        (message, isDebug) => updateCurrentStatus(message, isDebug),
         appendStreamEvent,
         selectedModel,
       );
@@ -376,14 +398,18 @@ export default function App() {
         resumeStatusTimeoutRef.current = null;
       }
       if (deferredInitialReview) {
-        setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+        if (debugModeRef.current) {
+          setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+        }
       } else if (resumedWithoutChanges) {
-        setCurrentStatusMessage('Resuming Sage thread...');
+        updateCurrentStatus('Resuming Sage thread...', true);
         resumeStatusTimeoutRef.current = setTimeout(() => {
           setCurrentStatusMessage(null);
           resumeStatusTimeoutRef.current = null;
         }, 1200);
-        setStatusMessages(['Session previously reviewed. Using existing context...']);
+        if (debugModeRef.current) {
+          setStatusMessages(['Session previously reviewed. Using existing context...']);
+        }
       } else {
         setCurrentStatusMessage(null);
         setStatusMessages([]);
@@ -413,7 +439,7 @@ export default function App() {
 
     // Show temporary feedback
     setManualSyncTriggered(true);
-    setCurrentStatusMessage('running manual sync...');
+    updateCurrentStatus('running manual sync...', true);
 
     // Clear any existing timeout
     if (manualSyncTimeoutRef.current) {
@@ -426,10 +452,7 @@ export default function App() {
       const manualQueued = await queueManualReview(activeSession);
       const queueDelta = queueRef.current.length - queueSizeBefore;
       if (!manualQueued && queueDelta === 0) {
-        setStatusMessages((prev) => [
-          ...prev,
-          'Manual sync: no new Claude output yet (response may still be streaming).',
-        ]);
+        addStatusMessage('Manual sync: no new Claude output yet (response may still be streaming).', true);
       }
       manualSyncTimeoutRef.current = setTimeout(() => {
         setManualSyncTriggered(false);
@@ -499,11 +522,22 @@ export default function App() {
   async function handleModelSelect(modelId: string) {
     setSelectedModel(modelId);
     try {
-      await saveSettings({ selectedModel: modelId });
+      await saveSettings({ selectedModel: modelId, debugMode });
     } catch {
       // Ignore save errors - settings are still applied for this session
     }
     setScreen('session-list');
+  }
+
+  async function handleToggleDebugMode() {
+    const newValue = !debugMode;
+    setDebugMode(newValue);
+    debugModeRef.current = newValue;
+    try {
+      await saveSettings({ selectedModel, debugMode: newValue });
+    } catch {
+      // Ignore save errors - settings are still applied for this session
+    }
   }
 
   async function resetContinuousState() {
@@ -593,7 +627,7 @@ export default function App() {
     setQueue(queueRef.current);
     const origin = job.source === 'manual' ? 'Queued manual review' : 'Queued review';
     const partialSuffix = job.isPartial ? ' (partial response)' : '';
-    setStatusMessages((prev) => [...prev, `${origin}: ${job.promptPreview}${partialSuffix}`]);
+    addStatusMessage(`${origin}: ${job.promptPreview}${partialSuffix}`, true);
     if (!workerRunningRef.current) {
       void processQueue();
     }
@@ -622,7 +656,7 @@ export default function App() {
               transcriptPath: job.transcriptPath,
               lastReviewedUuid: lastTurnSignatureRef.current,
             },
-            (message) => setCurrentStatusMessage(message),
+            (message, isDebug) => updateCurrentStatus(message, isDebug),
             appendStreamEvent,
             selectedModel,
           );
@@ -664,7 +698,9 @@ export default function App() {
             setCurrentStatusMessage(null);
             setStatusMessages([]);
           } else {
-            setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+            if (debugModeRef.current) {
+              setStatusMessages(['Initial review paused until Claude finishes its first response.']);
+            }
           }
 
           if (job.signalPath) {
@@ -705,7 +741,7 @@ export default function App() {
             latestTurnSignature: job.latestTurnSignature,
             isPartial: job.isPartial,
           },
-          (message) => setCurrentStatusMessage(message),
+          (message, isDebug) => updateCurrentStatus(message, isDebug),
           appendStreamEvent,
         );
 
@@ -980,7 +1016,7 @@ export default function App() {
         </Text>
       </Box>
 
-      {screen === 'running' && (
+      {screen === 'running' && debugMode && (
         <Box marginTop={1}>
           <Text dimColor>
             Codex thread: {threadId ?? 'Establishing…'}
@@ -1042,7 +1078,9 @@ export default function App() {
           {screen === 'settings' && (
             <SettingsScreen
               currentModel={selectedModel}
+              debugMode={debugMode}
               onSelectModel={handleModelSelect}
+              onToggleDebugMode={handleToggleDebugMode}
               onBack={() => setScreen('session-list')}
             />
           )}

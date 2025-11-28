@@ -5,10 +5,12 @@ import { DEFAULT_MODEL } from './models.js';
 
 export interface SageSettings {
   selectedModel: string;
+  debugMode: boolean;
 }
 
 const DEFAULT_SETTINGS: SageSettings = {
   selectedModel: DEFAULT_MODEL,
+  debugMode: false,
 };
 
 /**

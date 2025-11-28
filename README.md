@@ -22,6 +22,7 @@ Coding agents like Claude Code can sound confident while being wrong or incomple
 - **FIFO queue** - Handles multiple turns gracefully, reviews in order
 - **Interactive TUI** - Session picker and real-time critique display
 - **Model selection** - Choose from multiple AI models via settings screen
+- **Debug mode** - Toggle verbose status messages for troubleshooting
 - **Read-only by design** - Never modifies your code
 
 ## Prerequisites
@@ -119,8 +120,8 @@ Each review includes:
 - `Ctrl+C` - Exit
 
 ### Settings Screen
-- `↑` / `↓` - Navigate models
-- `Enter` - Select model
+- `↑` / `↓` - Navigate options (models, debug toggle)
+- `Enter` - Select model or toggle debug mode
 - `Esc` / `B` - Back to session picker
 
 ## Project Structure
@@ -207,11 +208,11 @@ Sage **automatically configures hooks on first run**. When you start Sage in a n
 
 Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `~/.sage/{project-path}/runtime/`.
 
-### Model Selection
+### Settings
 
-Sage supports multiple AI models for code review. Press `S` from the session picker to open the settings screen and choose your preferred model.
+Press `S` from the session picker to open the settings screen.
 
-Available models:
+**Model Selection**: Choose from multiple AI models for code review:
 - GPT-5.1 Codex (default)
 - GPT-5.1 Codex Mini
 - GPT-5.1
@@ -222,13 +223,21 @@ Available models:
 - GPT-4.1 Mini
 - GPT-4.1 Nano
 
-Your model selection is stored in `~/.sage/settings.json` and persists across sessions.
+**Debug Mode**: Toggle verbose status messages on/off. When enabled, you'll see detailed progress information like:
+- "loading session context..."
+- "Codex thread: {id}"
+- "Queued review: {prompt}"
+- Review progress from the AI model
+
+Debug mode is off by default for a cleaner UI. Enable it when troubleshooting or if you want more visibility into what Sage is doing.
+
+All settings are stored in `~/.sage/settings.json` and persist across sessions.
 
 ### Directory Structure
 
 **Global Sage Directory** (`~/.sage/`):
 
-- `~/.sage/settings.json` - User preferences (model selection)
+- `~/.sage/settings.json` - User preferences (model selection, debug mode)
 
 Each project gets its own subdirectory based on its full path (e.g., `/Users/you/projects/myapp` → `~/.sage/Users-you-projects-myapp/`):
 

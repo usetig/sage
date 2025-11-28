@@ -5,13 +5,20 @@ import { AVAILABLE_MODELS, type ModelConfig } from '../lib/models.js';
 
 interface SettingsScreenProps {
   currentModel: string;
+  debugMode: boolean;
   onSelectModel: (modelId: string) => void;
+  onToggleDebugMode: () => void;
   onBack: () => void;
 }
 
-export function SettingsScreen({ currentModel, onSelectModel, onBack }: SettingsScreenProps) {
-  const currentIndex = AVAILABLE_MODELS.findIndex((m) => m.id === currentModel);
-  const [selectedIndex, setSelectedIndex] = useState(currentIndex >= 0 ? currentIndex : 0);
+// Total selectable items: models + 1 debug toggle
+const DEBUG_TOGGLE_INDEX = AVAILABLE_MODELS.length;
+
+export function SettingsScreen({ currentModel, debugMode, onSelectModel, onToggleDebugMode, onBack }: SettingsScreenProps) {
+  const currentModelIndex = AVAILABLE_MODELS.findIndex((m) => m.id === currentModel);
+  const [selectedIndex, setSelectedIndex] = useState(currentModelIndex >= 0 ? currentModelIndex : 0);
+
+  const totalItems = AVAILABLE_MODELS.length + 1; // models + debug toggle
 
   useInput((input: string, key: Key) => {
     if (key.escape || input.toLowerCase() === 'b') {
@@ -25,13 +32,17 @@ export function SettingsScreen({ currentModel, onSelectModel, onBack }: Settings
     }
 
     if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(prev + 1, AVAILABLE_MODELS.length - 1));
+      setSelectedIndex((prev) => Math.min(prev + 1, totalItems - 1));
       return;
     }
 
     if (key.return) {
-      const model = AVAILABLE_MODELS[selectedIndex];
-      onSelectModel(model.id);
+      if (selectedIndex === DEBUG_TOGGLE_INDEX) {
+        onToggleDebugMode();
+      } else {
+        const model = AVAILABLE_MODELS[selectedIndex];
+        onSelectModel(model.id);
+      }
       return;
     }
   });
@@ -55,8 +66,18 @@ export function SettingsScreen({ currentModel, onSelectModel, onBack }: Settings
         </Box>
       </Box>
 
+      <Box marginTop={1} flexDirection="column">
+        <Text>Debug Mode:</Text>
+        <Box marginTop={1}>
+          <Text inverse={selectedIndex === DEBUG_TOGGLE_INDEX}>
+            {debugMode ? '✓ ON' : '  OFF'}
+          </Text>
+          <Text dimColor> (shows verbose status messages)</Text>
+        </Box>
+      </Box>
+
       <Box marginTop={1}>
-        <Text dimColor>Use ↑ ↓ to move, ↵ to select, ESC/B to go back</Text>
+        <Text dimColor>Use ↑ ↓ to move, ↵ to select/toggle, ESC/B to go back</Text>
       </Box>
     </Box>
   );
