@@ -223,13 +223,12 @@ Press `S` from the session picker to open the settings screen.
 - GPT-4.1 Mini
 - GPT-4.1 Nano
 
-**Debug Mode**: Toggle verbose status messages on/off. When enabled, you'll see detailed progress information like:
-- "loading session context..."
-- "Codex thread: {id}"
-- "Queued review: {prompt}"
-- Review progress from the AI model
+**Debug Mode**: Toggle verbose status messages on/off. When enabled, you'll see:
+- Persistent message history at the top of the screen (queued reviews, errors, cache events)
+- Codex thread ID display
+- Detailed queue information
 
-Debug mode is off by default for a cleaner UI. Enable it when troubleshooting or if you want more visibility into what Sage is doing.
+Without debug mode, you'll still see real-time spinner messages (e.g., "Sage is thinking...", "analyzing codebase context...") but no persistent history. Debug mode is off by default for a cleaner UI.
 
 All settings are stored in `~/.sage/settings.json` and persist across sessions.
 
