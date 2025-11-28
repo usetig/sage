@@ -76,7 +76,7 @@ When you select a session, Sage loads the thread metadata and determines which p
 4. Save thread ID + current turn count to `.sage/threads/{sessionId}.json`
 5. Display critique and enter continuous mode
 
-**Status messages:**
+**Spinner messages (always visible):**
 - `loading session context...`
 - `reading conversation history...`
 - `analyzing codebase context...`
@@ -110,9 +110,11 @@ If `!hasNewTurns`, Sage knows conversation is unchanged.
 5. Restore previous critiques from `.sage/reviews/{sessionId}.json`
 6. Enter continuous mode with existing thread
 
-**Status messages:**
+**Spinner messages (always visible):**
 - `Resuming Sage thread...` (shown briefly, then cleared)
-- `Session previously reviewed. Using existing critiques.`
+
+**Persistent messages (debug mode only):**
+- `Session previously reviewed. Using existing context...`
 
 **`isFreshCritique` flag:** `false` (placeholder, not persisted)
 
@@ -131,9 +133,9 @@ If `!hasNewTurns`, Sage knows conversation is unchanged.
 4. Update turn count: `updateThreadTurnCount(sessionId, currentTurnCount)`
 5. Display new critique and continue watching
 
-**Status messages:**
+**Spinner messages (always visible):**
 - `examining new dialogue...`
-- `reviewing changes...`
+- `Sage is thinking...`
 
 **`isFreshCritique` flag:** `true` (new analysis performed)
 

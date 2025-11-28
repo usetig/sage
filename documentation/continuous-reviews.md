@@ -29,7 +29,7 @@ This guide documents the current continuous-review implementation that rides on 
 6. **Queue worker**
    - `processQueue()` drains jobs FIFO, reusing the live Codex thread to maintain context across reviews.
    - Successful critiques append to the UI feed, atomically update the review cache, and delete the signal file.
-   - Failures surface a status message and leave the signal on disk so the job retries when Sage restarts or the user presses `M`.
+   - Failures show an error in the spinner and leave the signal on disk so the job retries when Sage restarts or the user presses `M`. In debug mode, errors also appear in the persistent message history.
 
 ---
 
