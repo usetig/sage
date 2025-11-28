@@ -933,7 +933,7 @@ export default function App() {
       }
     }
 
-    const promptPreview = getPromptPreview(turns[0].user);
+    const promptPreview = getPromptPreview(turns[turns.length - 1].user);
     enqueueJob({
       sessionId: session.sessionId,
       transcriptPath: session.transcriptPath,
