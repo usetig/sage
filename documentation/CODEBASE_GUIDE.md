@@ -213,7 +213,7 @@ export interface ReviewResult {
   turnSignature?: string;       // assistantUuid of reviewed turn
   latestPrompt?: string;        // User prompt that triggered review
   debugInfo?: {
-    artifactPath: string;       // Path to .debug/review-*.txt
+    artifactPath: string;       // Path to ~/.sage/{project}/debug/review-*.txt
     promptText: string;         // Full prompt sent to Codex
   };
   isFreshCritique: boolean;     // false if resumed from cache
@@ -668,7 +668,7 @@ export async function runInitialReview(
 ```
 1. Extract turns from JSONL
 2. Build initial prompt payload
-3. Write artifact to `.debug/` (always)
+3. Write artifact to `~/.sage/{project}/debug/` (always)
 4. Load thread metadata
 5. Get or create Codex thread
 6. Check if thread resumed:
@@ -718,7 +718,7 @@ if (isResumedThread && !hasNewTurns) {
 ```
 1. Validate turns exist
 2. Build followup prompt payload
-3. Write artifact to `.debug/` (always)
+3. Write artifact to `~/.sage/{project}/debug/` (always)
 4. Validate thread exists
 5. Call runFollowupReview()
 6. Return ReviewResult
@@ -846,7 +846,7 @@ export async function saveThreadMetadata(
 **Always Created** (for all reviews):
 
 ```
-.debug/review-{sanitized-prompt-label}.txt
+~/.sage/{project}/debug/review-{sanitized-prompt-label}.txt
 ```
 
 **File Format**:
@@ -1635,11 +1635,9 @@ Each project gets its own directory under `~/.sage/` based on its full path (e.g
 - `~/.sage/{project-path}/runtime/needs-review/`: Review signals
 - `~/.sage/{project-path}/threads/`: Thread metadata
 - `~/.sage/{project-path}/reviews/`: Review cache
-- `.debug/`: Debug artifacts (local to project)
+- `~/.sage/{project-path}/debug/`: Debug artifacts
 
 **All Created Automatically**: No manual setup required.
-
-**Git Ignore**: `.debug/` should be in `.gitignore` (`.sage/` is now global, not in project)
 
 ---
 

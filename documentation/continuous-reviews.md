@@ -61,7 +61,7 @@ This guide documents the current continuous-review implementation that rides on 
 - `M` — Manually rescan `~/.sage/{project-path}/runtime/needs-review/` (useful after resolving hook issues or if Sage was closed while Claude was responding).
 - `C` — Enter chat mode to ask Sage questions about your codebase or the latest critique (see `documentation/specs/interactive-followup-design.md`).
 
-Status messaging reflects the current stage (initial review, incremental review, waiting). Critique cards always display the artifact path (`.debug/review-*.txt`) so you can inspect exactly what was sent to Codex.
+Status messaging reflects the current stage (initial review, incremental review, waiting). Critique cards always display the artifact path (`~/.sage/{project}/debug/review-*.txt`) so you can inspect exactly what was sent to Codex.
 
 ---
 

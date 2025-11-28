@@ -84,3 +84,11 @@ export function getThreadsDir(): string {
 export function getReviewsDir(): string {
   return path.join(getSageDir(), 'reviews');
 }
+
+/**
+ * Get the debug directory for the current project.
+ * Returns ~/.sage/{encoded-project-path}/debug/
+ */
+export function getDebugDir(): string {
+  return path.join(getSageDir(), 'debug');
+}

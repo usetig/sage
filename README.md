@@ -147,15 +147,15 @@ sage/
 │   │   └── SettingsScreen.tsx # Model selection UI
 │   └── scripts/              # Developer utilities (hook installer)
 │       └── configureHooks.ts
-├── .debug/                    # Artifact files written for inspection
 └── documentation/             # Reference docs
 
-Runtime state (sessions, threads, reviews) is stored globally:
+Runtime state (sessions, threads, reviews, debug artifacts) is stored globally:
 ~/.sage/
 └── {encoded-project-path}/    # e.g., Users-you-projects-myapp/
     ├── runtime/
     ├── threads/
-    └── reviews/
+    ├── reviews/
+    └── debug/                 # Artifact files written for inspection
 ```
 
 ## Troubleshooting
@@ -249,7 +249,6 @@ Each project gets its own subdirectory based on its full path (e.g., `/Users/you
 
 **Local Project Files**:
 
-- `.debug/` - Prompt artifacts for inspection (auto-generated, local to project)
 - `.claude/settings.local.json` - Claude Code hooks (auto-configured)
 
 ## Development
@@ -287,7 +286,7 @@ See [agents.md](./agents.md) for contributor guidelines and architecture details
 
 - Does not follow resumed session chains back to parent sessions
 - No arrow-key navigation within critique history
-- Minimal persistent logging to console (artifacts available in `.debug/`)
+- Minimal persistent logging to console (artifacts available in `~/.sage/{project}/debug/`)
 - Warmup-only sessions are filtered but take up session IDs
 
 ## License

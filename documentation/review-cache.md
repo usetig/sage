@@ -23,7 +23,7 @@ Sage keeps a lightweight, read-only record of every critique so reopening the TU
         "questions": "",
         "message_for_agent": ""
       },
-      "artifactPath": ".debug/review-latest-turn.txt",
+      "artifactPath": "~/.sage/{project}/debug/review-latest-turn.txt",
       "promptText": "Full instruction segment passed to Codex"
     }
   ]

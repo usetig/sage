@@ -1,7 +1,8 @@
 import path from 'path';
 import { promises as fs } from 'fs';
+import { getDebugDir } from './paths.js';
 
-const DEBUG_DIR = path.join(process.cwd(), '.debug');
+const DEBUG_DIR = getDebugDir();
 
 export async function ensureDebugDir(): Promise<string> {
   await fs.mkdir(DEBUG_DIR, { recursive: true });

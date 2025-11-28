@@ -22,7 +22,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/jsonl.ts` parses Claude JSONL logs (primary turns only). Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
 | **Continuous Mode** | After initial review, Sage watches `~/.sage/{project-path}/runtime/needs-review/` for hook signals and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
-| **Artifacts** | Prompts and context are archived under `.debug/` for inspection. All reviews generate artifacts regardless of operation mode. |
+| **Artifacts** | Prompts and context are archived under `~/.sage/{project}/debug/` for inspection. All reviews generate artifacts regardless of operation mode. |
 
 ---
 
@@ -173,10 +173,10 @@ This document gives any coding agent the context it needs to contribute safely a
 
 ## 10. Artifact Inspection
 
-- **Artifacts (Always Created):** Sage writes prompt instructions plus the raw conversation/context to `.debug/review-<prompt>.txt` for **every review**. Filenames are sanitized and deduplicated. The directory is ignored by git. Each review card displays the artifact path underneath "Review #x • ..." so you can always inspect what was sent to Codex.
+- **Artifacts (Always Created):** Sage writes prompt instructions plus the raw conversation/context to `~/.sage/{project}/debug/review-<prompt>.txt` for **every review**. Filenames are sanitized and deduplicated. Each review card displays the artifact path underneath "Review #x • ..." so you can always inspect what was sent to Codex.
 - **Purpose:** Allows developers to inspect exactly what prompt and context were sent to Codex during each review. Useful for understanding how Sage formulates critiques and debugging unexpected review results.
 - **File Format:** Artifacts include headers with session ID and review type, followed by the INSTRUCTIONS section (system prompt sent to Codex) and CONTEXT section (formatted conversation turns).
-- **Cleanup:** Remove the `.debug/` folder or individual files when you no longer need them. They are ignored by version control but can accumulate quickly during rapid iteration.
+- **Cleanup:** Remove the `~/.sage/{project}/debug/` folder or individual files when you no longer need them. They can accumulate quickly during rapid iteration.
 
 ---
 
