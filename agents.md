@@ -19,7 +19,7 @@ This document gives any coding agent the context it needs to contribute safely a
 | **Session Discovery** | Lists sessions from hook-emitted metadata in `~/.sage/{project-path}/runtime/sessions/`. Automatically filters warmup-only stubs. |
 | **UI** | Ink TUI (`src/ui/App.tsx`) with structured critique cards, queue display, and real-time status. Shows project name in header. |
 | **Export** | Claude hooks write per-session metadata and review signals into `~/.sage/{project-path}/runtime/` (no external CLI required). |
-| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/jsonl.ts` parses Claude JSONL logs (primary turns only). Returns typed `CritiqueResponse` objects (verdict, why, alternatives, questions, and optional message_for_agent for non-approved verdicts). |
+| **Review Engine** | `src/lib/codex.ts` uses Codex SDK with JSON schema for structured output. `src/lib/jsonl.ts` parses Claude JSONL logs (primary turns only). Returns typed `CritiqueResponse` objects (verdict, why, alternatives, and optional message_for_agent for non-approved verdicts). |
 | **Continuous Mode** | After initial review, Sage watches `~/.sage/{project-path}/runtime/needs-review/` for hook signals and enqueues reviews (FIFO). |
 | **UI Components** | `src/ui/CritiqueCard.tsx` renders structured critiques with symbols (✓ ⚠ ✗) and color-coded verdicts. Reviews stack vertically for scrollback. |
 | **Artifacts** | Prompts and context are archived under `~/.sage/{project}/debug/` for inspection. All reviews generate artifacts regardless of operation mode. |

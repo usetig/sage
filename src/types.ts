@@ -2,7 +2,6 @@ export interface Critique {
   verdict: 'Approved' | 'Concerns' | 'Critical Issues';
   why: string;
   alternatives?: string;
-  questions?: string;
   raw: string;
 }
 

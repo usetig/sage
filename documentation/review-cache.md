@@ -20,7 +20,6 @@ Sage keeps a lightweight, read-only record of every critique so reopening the TU
         "verdict": "Approved",
         "why": "...",
         "alternatives": "",
-        "questions": "",
         "message_for_agent": ""
       },
       "artifactPath": "~/.sage/{project}/debug/review-latest-turn.txt",

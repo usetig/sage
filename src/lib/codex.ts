@@ -6,7 +6,6 @@ export interface CritiqueResponse {
   verdict: 'Approved' | 'Concerns' | 'Critical Issues';
   why: string;
   alternatives: string;
-  questions: string;
   message_for_agent: string;
 }
 
@@ -19,10 +18,9 @@ const CRITIQUE_SCHEMA = {
     },
     why: { type: 'string' },
     alternatives: { type: 'string' },
-    questions: { type: 'string' },
     message_for_agent: { type: 'string' },
   },
-  required: ['verdict', 'why', 'alternatives', 'questions', 'message_for_agent'],
+  required: ['verdict', 'why', 'alternatives', 'message_for_agent'],
   additionalProperties: false,
 } as const;
 
@@ -170,7 +168,6 @@ export function buildInitialPromptPayload(
     '- Verdict: "Approved" | "Concerns" | "Critical Issues"',
     '- Why: Your main reasoning (return empty string "" for "Approved" verdict; required with content for "Concerns" or "Critical Issues")',
     '- Alternatives: Suggested alternative approaches (empty string if not applicable)',
-    '- Questions: Clarification questions for the developer (empty string if not applicable)',
     '- message_for_agent: Direct communication with Claude Code agent (empty string if not applicable)',
     '',
     '# message_for_agent Guidelines',
@@ -254,7 +251,6 @@ export function buildFollowupPromptPayload(
     '- Verdict: "Approved" | "Concerns" | "Critical Issues"',
     '- Why: Your main reasoning (return empty string "" for "Approved" verdict; required with content for "Concerns" or "Critical Issues")',
     '- Alternatives: Suggested alternative approaches (empty string if not applicable)',
-    '- Questions: Clarification questions for the developer (empty string if not applicable)',
     '- message_for_agent: Direct communication with Claude Code agent (empty string if not applicable)',
     '',
     '# message_for_agent Guidelines',
@@ -449,61 +445,64 @@ function describeItemEvent(
   item: ThreadItem,
   timestamp: number,
 ): StreamEvent[] {
-  const stageLabel = stage === 'started' ? 'Started' : stage === 'updated' ? 'Updated' : 'Completed';
+  // Only emit events for completed items to reduce noise
+  if (stage !== 'completed') {
+    return [];
+  }
   const value: any = item;
 
   switch (item.type) {
     case 'agent_message': {
-      const raw = extractItemText(value);
-      if (stage !== 'completed') {
-        return [makeStreamEvent('status', `${stageLabel} assistant message`, timestamp)];
+      // Try to extract structured critique fields
+      const payload = extractStructuredPayload(value);
+      if (payload && isCritiqueResponse(payload)) {
+        const verdict = payload.verdict;
+        const why = payload.why ? truncateString(payload.why, 100) : '';
+        return [makeStreamEvent('assistant', `${verdict}: ${why}`, timestamp)];
       }
 
-      const message = raw ? raw : 'Assistant emitted an empty message.';
+      // Fallback to raw text (truncated)
+      const raw = extractItemText(value);
+      const message = raw ? truncateString(raw, 150) : 'Assistant message';
       return [makeStreamEvent('assistant', message, timestamp)];
     }
     case 'reasoning': {
       const raw = extractItemText(value);
-      if (!raw) {
-        return [makeStreamEvent('reasoning', `${stageLabel} reasoning step`, timestamp)];
-      }
-      const prefix = stage === 'completed' ? '' : `${stageLabel} reasoning step:\n`;
-      return [makeStreamEvent('reasoning', `${prefix}${raw}`, timestamp)];
+      const message = raw ? truncateString(raw, 150) : 'Reasoning step';
+      return [makeStreamEvent('reasoning', message, timestamp)];
     }
     case 'command_execution': {
       const command = typeof value?.command === 'string' ? value.command : 'command';
-      const status = typeof value?.status === 'string' ? value.status : 'running';
+      const truncated = command.length > 100 ? command.slice(0, 100) + '...' : command;
+      const status = typeof value?.status === 'string' ? value.status : 'completed';
       const exitCode = typeof value?.exit_code === 'number' ? ` (exit ${value.exit_code})` : '';
-      const message = stage === 'completed'
-        ? `Command ${command} ${status}${exitCode}`
-        : `${stageLabel} command ${command}`;
-      return [makeStreamEvent('command', message, timestamp)];
+      return [makeStreamEvent('command', `${truncated} ${status}${exitCode}`, timestamp)];
     }
     case 'file_change': {
       const changes = Array.isArray(value?.changes) ? value.changes : [];
       if (!changes.length) {
-        return [makeStreamEvent('file', `${stageLabel} file change`, timestamp)];
+        return [makeStreamEvent('file', 'File changed', timestamp)];
       }
       return changes.map((change: any) => {
         const kind = typeof change?.kind === 'string' ? change.kind : 'updated';
         const path = typeof change?.path === 'string' ? change.path : '(unknown path)';
-        return makeStreamEvent('file', `${stageLabel} file ${kind}: ${path}`, timestamp);
+        return makeStreamEvent('file', `${kind}: ${path}`, timestamp);
       });
     }
     case 'todo_list': {
-      return [makeStreamEvent('todo', summarizeTodoList(stageLabel, value), timestamp)];
+      return [makeStreamEvent('todo', summarizeTodoList(value), timestamp)];
     }
     default: {
       const typeLabel = typeof value?.type === 'string' ? value.type : 'item';
-      return [makeStreamEvent('status', `${stageLabel} ${typeLabel}`, timestamp)];
+      return [makeStreamEvent('status', `${typeLabel} completed`, timestamp)];
     }
   }
 }
 
-function summarizeTodoList(stageLabel: string, item: any): string {
+function summarizeTodoList(item: any): string {
   const items = Array.isArray(item?.items) ? item.items : [];
   if (!items.length) {
-    return `${stageLabel} todo list (empty)`;
+    return 'Todo list (empty)';
   }
 
   const lines = items.map((todo: any) => {
@@ -512,7 +511,7 @@ function summarizeTodoList(stageLabel: string, item: any): string {
     return `${symbol} ${text}`.trim();
   });
 
-  return `${stageLabel} todo list:\n${lines.join('\n')}`;
+  return `Todo list:\n${lines.join('\n')}`;
 }
 
 function extractItemText(item: any): string {
@@ -538,6 +537,11 @@ function extractItemText(item: any): string {
   }
 
   return '';
+}
+
+function truncateString(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen - 3) + '...';
 }
 
 function extractCritiqueFromEvent(event: ThreadEvent): CritiqueResponse | null {
@@ -577,7 +581,6 @@ function isCritiqueResponse(value: any): value is CritiqueResponse {
     typeof value.verdict === 'string'
     && typeof value.why === 'string'
     && typeof value.alternatives === 'string'
-    && typeof value.questions === 'string'
     && typeof value.message_for_agent === 'string'
   );
 

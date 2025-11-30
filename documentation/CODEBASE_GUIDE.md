@@ -144,7 +144,6 @@ export interface Critique {
   verdict: 'Approved' | 'Concerns' | 'Critical Issues';
   why: string;
   alternatives?: string;
-  questions?: string;
   raw: string;
 }
 
@@ -197,7 +196,6 @@ export interface CritiqueResponse {
   verdict: 'Approved' | 'Concerns' | 'Critical Issues';
   why: string;                  // Required: Main reasoning
   alternatives: string;         // Optional: Alternative approaches
-  questions: string;           // Optional: Questions for developer
   message_for_agent: string;   // Optional: Direct message to Claude
 }
 ```
@@ -613,10 +611,9 @@ const CRITIQUE_SCHEMA = {
     verdict: { type: 'string', enum: ['Approved', 'Concerns', 'Critical Issues'] },
     why: { type: 'string' },
     alternatives: { type: 'string' },
-    questions: { type: 'string' },
     message_for_agent: { type: 'string' },
   },
-  required: ['verdict', 'why', 'alternatives', 'questions', 'message_for_agent'],
+  required: ['verdict', 'why', 'alternatives', 'message_for_agent'],
   additionalProperties: false,
 };
 ```

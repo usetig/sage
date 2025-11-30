@@ -17,7 +17,7 @@ Coding agents like Claude Code can sound confident while being wrong or incomple
 
 - **Zero-command workflow** - Automatically reviews Claude responses as you work
 - **Repository-aware** - Reads your codebase to provide informed critiques
-- **Structured feedback** - Delivers verdict, reasoning, alternatives, and questions
+- **Structured feedback** - Delivers verdict, reasoning, and alternatives
 - **Thread persistence** - Automatically resumes context when re-selecting sessions
 - **FIFO queue** - Handles multiple turns gracefully, reviews in order
 - **Interactive TUI** - Session picker and real-time critique display
@@ -84,7 +84,6 @@ Each review includes:
 - **Verdict**: Approved | Concerns | Critical Issues
 - **Why**: Main reasoning and issues found
 - **Alternatives**: Suggested alternative approaches (if applicable)
-- **Questions**: Clarification questions for you (if applicable)
 
 ## Documentation
 

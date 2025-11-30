@@ -67,12 +67,6 @@ export function CritiqueCard({
         </Box>
       )}
 
-      {critique.questions && critique.questions.trim() && (
-        <Box marginTop={1} flexDirection="column">
-          <Text bold color="magenta">QUESTIONS</Text>
-          <Text>{critique.questions}</Text>
-        </Box>
-      )}
 
       {critique.message_for_agent && critique.message_for_agent.trim() && (
         <Box marginTop={1} flexDirection="column">

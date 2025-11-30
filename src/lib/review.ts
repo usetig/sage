@@ -52,7 +52,6 @@ export async function performInitialReview(
         verdict: 'Approved',
         why: 'Initial review deferred — Sage will start once Claude finishes its first response.',
         alternatives: '',
-        questions: '',
         message_for_agent: '',
       },
       transcriptPath,
@@ -74,7 +73,6 @@ export async function performInitialReview(
         verdict: 'Approved',
         why: 'Initial review deferred until Claude finishes responding.',
         alternatives: '',
-        questions: '',
         message_for_agent: '',
       },
       transcriptPath,
@@ -121,7 +119,6 @@ export async function performInitialReview(
       verdict: 'Approved',
       why: 'Session previously reviewed. Entering continuous mode with existing context.',
       alternatives: '',
-      questions: '',
       message_for_agent: '',
     };
     isFreshCritique = false;
