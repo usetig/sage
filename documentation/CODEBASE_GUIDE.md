@@ -181,6 +181,7 @@ export interface TurnSummary {
   agent?: string;              // Claude's response text
   userUuid?: string;           // UUID of user message entry
   assistantUuid?: string;      // UUID of assistant response entry
+  isPartial?: boolean;         // True if Claude was still responding
 }
 ```
 
@@ -217,6 +218,8 @@ export interface ReviewResult {
     promptText: string;         // Full prompt sent to Codex
   };
   isFreshCritique: boolean;     // false if resumed from cache
+  streamEvents: StreamEvent[];  // Events captured during streaming review
+  isPartial?: boolean;          // True if reviewing incomplete response
 }
 ```
 
@@ -263,6 +266,47 @@ export interface StoredReview {
 - Skip reviews for already-reviewed turns
 - Display critique history even after restart
 
+### Path Configuration (`src/lib/paths.ts`)
+
+```typescript
+export function getProjectRoot(): string;      // CLAUDE_PROJECT_DIR or cwd()
+export function encodeProjectPath(path: string): string;  // /Users/you/foo → Users-you-foo
+export function getSageDir(): string;          // ~/.sage/{encoded-project-path}/
+export function getRuntimeDir(): string;       // ~/.sage/{project}/runtime/
+export function getSessionsDir(): string;      // ~/.sage/{project}/runtime/sessions/
+export function getQueueDir(): string;         // ~/.sage/{project}/runtime/needs-review/
+export function getErrorLogPath(): string;     // ~/.sage/{project}/runtime/hook-errors.log
+export function getThreadsDir(): string;       // ~/.sage/{project}/threads/
+export function getReviewsDir(): string;       // ~/.sage/{project}/reviews/
+export function getDebugDir(): string;         // ~/.sage/{project}/debug/
+```
+
+**Purpose**: Centralizes all path configuration for per-project isolation. Each project gets its own Sage data directory under `~/.sage/` based on its full path (e.g., `/Users/you/projects/foo` → `~/.sage/Users-you-projects-foo/`).
+
+**Key Design Decision**: Uses `CLAUDE_PROJECT_DIR` environment variable when available (set by Claude Code hooks), otherwise falls back to `process.cwd()`.
+
+### Streaming Types (`src/lib/codex.ts`)
+
+```typescript
+export type StreamEventTag =
+  | 'assistant'   // Assistant message content
+  | 'reasoning'   // Reasoning/thinking trace
+  | 'command'     // Command execution
+  | 'file'        // File changes
+  | 'todo'        // Todo list updates
+  | 'status'      // General status updates
+  | 'error';      // Error events
+
+export interface StreamEvent {
+  id: string;           // Unique event ID
+  timestamp: number;    // Event timestamp
+  tag: StreamEventTag;  // Event category
+  message: string;      // Human-readable message
+}
+```
+
+**Purpose**: Represents streaming events from Codex reviews, displayed in the Stream Overlay (`Ctrl+O`).
+
 ---
 
 ## Entry Point & Application Flow
@@ -295,7 +339,15 @@ App.tsx (mount)
   ↓
 useEffect → init()
   ↓
+loadSettings()           // Load user preferences (model, debugMode)
+  ↓
 ensureHooksConfigured()  // Auto-configure Claude hooks
+  ↓
+Validate Claude Code     // Check Claude binary exists and version >= 2.0.50
+  ↓
+Validate Codex CLI       // Check `codex` command is installed
+  ↓
+Validate Codex Auth      // Check CODEX_API_KEY or ~/.codex/auth.json exists
   ↓
 reloadSessions()
   ↓
@@ -307,6 +359,12 @@ Filter warmup sessions
   ↓
 Display session picker (with "✓ Hooks configured" if first run)
 ```
+
+**Startup Validation**: Sage performs several checks before loading sessions:
+1. **Claude Code check**: Finds Claude binary via `CLAUDE_BIN` env, `which claude`, or `~/.claude/local/claude`
+2. **Version check**: Requires Claude Code >= 2.0.50 for hook support
+3. **Codex CLI check**: Ensures `codex` command is available in PATH
+4. **Codex auth check**: Verifies `CODEX_API_KEY` env var or `~/.codex/auth.json` exists
 
 ### Session Selection Flow
 
@@ -396,33 +454,33 @@ const processedSignalsRef = useRef<Set<string>>(new Set());
 
 **Key Functions**:
 
-1. **`reloadSessions()`** (lines 695-715)
+1. **`reloadSessions()`**
    - Calls `listActiveSessions()` to discover sessions
    - Filters warmup-only sessions automatically
    - Sorts by `lastUpdated` (most recent first)
    - Handles errors gracefully
 
-2. **`handleSessionSelection()`** (lines 192-305)
+2. **`handleSessionSelection()`**
    - Loads cached reviews for the session
    - Restores previous critique history
    - Performs initial review (or resumes if no new turns)
    - Initializes file watcher
    - Drains any pending signals
 
-3. **`processQueue()`** (lines 501-575)
+3. **`processQueue()`**
    - FIFO worker that processes review queue
    - Uses `workerRunningRef` to prevent concurrent execution
    - Calls `performIncrementalReview()` for each job
    - Handles errors without stopping the queue
    - Cleans up signal files after processing
 
-4. **`processSignalFile()`** (lines 610-655)
+4. **`processSignalFile()`**
    - Reads signal file from `.sage/runtime/needs-review/`
    - Extracts new turns since last reviewed signature
    - Enqueues job if new turns exist
    - Deduplicates signals using `processedSignalsRef`
 
-5. **`handleChatSubmit()`** (lines 338-389)
+5. **`handleChatSubmit()`**
    - Handles user questions to Sage
    - Calls `chatWithSage()` with Codex thread
    - Adds messages to chat history
@@ -466,7 +524,7 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'setti
 - Handling resume sessions (same UUIDs reused)
 - Detecting warmup-only sessions
 
-**Core Function: `extractTurns()`** (lines 86-188)
+**Core Function: `extractTurns()`**
 
 **Algorithm**:
 
@@ -493,25 +551,25 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'setti
 
 **Helper Functions**:
 
-1. **`isPrimaryUserPrompt()`** (lines 190-196)
+1. **`isPrimaryUserPrompt()`**
    - Validates entry is a primary user prompt
    - Checks: `type === 'user'`, `message.role === 'user'`
    - Requires `thinkingMetadata` (indicates primary chain)
    - Excludes empty text
 
-2. **`resolveRootUserUuid()`** (lines 203-227)
+2. **`resolveRootUserUuid()`**
    - Traverses `parentUuid` chain upward
    - Finds root user prompt UUID
    - Prevents infinite loops with visited set
    - Returns `null` if no root found
 
-3. **`formatAssistantMessage()`** (lines 229-255)
+3. **`formatAssistantMessage()`**
    - Formats Claude's response message
    - Handles string, object, or array content
    - Includes tool_use entries (except Read/Task)
    - Joins text chunks with double newlines
 
-4. **`isWarmupSession()`** (lines 274-299)
+4. **`isWarmupSession()`**
    - Checks if session's only primary prompt is "Warmup"
    - Used to filter warmup-only sessions from picker
    - Returns `true` if first primary prompt is "Warmup" (case-insensitive)
@@ -537,7 +595,7 @@ type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'setti
 
 **Key Components**:
 
-1. **Singleton Codex Instance** (lines 43-46)
+1. **Singleton Codex Instance**
 
 ```typescript
 const singleton = new Codex();
@@ -546,7 +604,7 @@ export const codexInstance = singleton;
 
 **Why Singleton?**: Codex SDK manages connections internally. One instance is sufficient and more efficient.
 
-2. **JSON Schema for Structured Output** (lines 13-27)
+2. **JSON Schema for Structured Output**
 
 ```typescript
 const CRITIQUE_SCHEMA = {
@@ -629,31 +687,59 @@ Full conversation transcript follows between <conversation> tags.
 
 5. **Review Execution** (`runInitialReview()`, `runFollowupReview()`)
 
+Both review functions use streaming to capture real-time events for the Stream Overlay:
+
 ```typescript
 export async function runInitialReview(
   context: InitialReviewContext,
-  thread?: Thread,
-): Promise<{ thread: Thread; critique: CritiqueResponse; promptPayload: PromptPayload }> {
-  const reviewThread = thread ?? singleton.startThread(getConfiguredThreadOptions());
-  const payload = buildInitialPromptPayload(context);
-  const result = await reviewThread.run(payload.prompt, { outputSchema: CRITIQUE_SCHEMA });
-  
-  const critique = typeof result.finalResponse === 'object'
-    ? result.finalResponse as CritiqueResponse
-    : JSON.parse(result.finalResponse as string) as CritiqueResponse;
-  
-  return { thread: reviewThread, critique, promptPayload: payload };
+  options?: RunReviewOptions,
+): Promise<RunInitialReviewResult> {
+  const reviewThread = options?.thread ?? singleton.startThread(getConfiguredThreadOptions(options?.model));
+  const payload = options?.promptPayload ?? buildInitialPromptPayload(context);
+  const { critique, events } = await executeStreamedTurn(reviewThread, payload.prompt, options?.onEvent);
+
+  return { thread: reviewThread, critique, promptPayload: payload, streamEvents: events };
+}
+```
+
+**Streaming Architecture** (`executeStreamedTurn()`):
+
+```typescript
+async function executeStreamedTurn(
+  thread: Thread,
+  prompt: string,
+  onEvent?: (event: StreamEvent) => void,
+): Promise<{ critique: CritiqueResponse; events: StreamEvent[] }> {
+  const { events } = await thread.runStreamed(prompt, { outputSchema: CRITIQUE_SCHEMA });
+  const collected: StreamEvent[] = [];
+
+  for await (const event of events) {
+    const derived = convertThreadEventToStreamEvents(event);
+    for (const entry of derived) {
+      collected.push(entry);
+      onEvent?.(entry);  // Callback for live overlay updates
+    }
+
+    if (event.type === 'turn.completed') break;
+    if (event.type === 'turn.failed') throw new Error(event.error?.message);
+  }
+
+  return { critique, events: collected };
 }
 ```
 
 **Process**:
 1. Get or create Codex thread
 2. Build prompt payload
-3. Call `thread.run()` with JSON schema
-4. Parse structured response
-5. Return thread, critique, and payload
+3. Call `thread.runStreamed()` with JSON schema
+4. Iterate async event stream, converting to `StreamEvent` objects
+5. Fire `onEvent` callback for each event (feeds Stream Overlay)
+6. Extract structured critique from `item.completed` event
+7. Return thread, critique, payload, and collected `streamEvents`
 
-**Error Handling**: Assumes Codex SDK throws errors that propagate up. No try/catch here (handled in `review.ts`).
+**Stream Event Conversion**: `convertThreadEventToStreamEvents()` maps Codex SDK events (`item.started`, `item.updated`, `item.completed`, `turn.completed`, `turn.failed`) to Sage's `StreamEvent` format with appropriate tags (`assistant`, `reasoning`, `command`, `file`, `todo`, `status`, `error`).
+
+**Error Handling**: Stream iteration handles `turn.failed` events by throwing. Timeouts are applied at the `review.ts` layer.
 
 ### `src/lib/review.ts` - Review Orchestration
 
@@ -661,7 +747,7 @@ export async function runInitialReview(
 
 **Key Functions**:
 
-1. **`performInitialReview()`** (lines 32-170)
+1. **`performInitialReview()`**
 
 **Flow**:
 
@@ -682,7 +768,7 @@ export async function runInitialReview(
 8. Return ReviewResult
 ```
 
-**Resume Detection Logic** (lines 94-152):
+**Resume Detection Logic**:
 
 ```typescript
 const metadata = await loadThreadMetadata(sessionId);
@@ -711,7 +797,7 @@ if (isResumedThread && !hasNewTurns) {
 
 **Why This Matters**: Prevents duplicate reviews when re-selecting a session with no new turns.
 
-2. **`performIncrementalReview()`** (lines 180-253)
+2. **`performIncrementalReview()`**
 
 **Flow**:
 
@@ -724,22 +810,27 @@ if (isResumedThread && !hasNewTurns) {
 6. Return ReviewResult
 ```
 
-**Timeout Handling**: Both initial and incremental reviews have 5-minute timeouts (lines 116-117, 234-236).
+**Timeout Handling**: Both initial and incremental reviews have 5-minute timeouts.
 
-3. **`clarifyReview()`** (lines 261-328)
+3. **`chatWithSage()`**
 
-**Purpose**: Allows users to ask Sage questions about its critiques.
+**Purpose**: Allows users to have conversational exchanges with Sage about the codebase or critiques.
 
-**Prompt Design**:
+```typescript
+export async function chatWithSage(
+  thread: Thread | null,
+  userQuestion: string,
+  sessionId: string,
+): Promise<{ response: string }>
+```
 
-- Emphasizes **EXPLANATION ONLY**
-- Explicitly forbids suggesting implementations or fixes
-- Tells Codex to reference files already read
-- Reminds Codex it's a reviewer, not an implementer
+**Behavior**:
+- Uses the existing Codex thread (preserves context from prior reviews)
+- Responds conversationally without structured JSON output
+- 2-minute timeout for responses
+- Throws error if no active thread exists
 
-**Key Constraint**: "If they ask you to suggest fixes or write code, politely remind them: 'That's outside my scope as a reviewer.'"
-
-**Why?**: Sage is read-only and should focus on helping the developer understand the codebase and critique.
+**Chat Mode Access**: Press 'C' in running mode to enter chat, ESC to exit.
 
 ### `src/lib/threads.ts` - Thread Persistence
 
@@ -747,7 +838,7 @@ if (isResumedThread && !hasNewTurns) {
 
 **Key Functions**:
 
-1. **`saveThreadMetadata()`** (lines 31-48)
+1. **`saveThreadMetadata()`**
 
 ```typescript
 export async function saveThreadMetadata(
@@ -772,13 +863,13 @@ export async function saveThreadMetadata(
 
 **Storage**: `~/.sage/{project-path}/threads/{sessionId}.json`
 
-2. **`loadThreadMetadata()`** (lines 67-83)
+2. **`loadThreadMetadata()`**
 
 - Reads metadata file
 - Updates `lastUsed` timestamp on access
 - Returns `null` if file doesn't exist or is corrupted
 
-3. **`getOrCreateThread()`** (lines 103-132)
+3. **`getOrCreateThread()`**
 
 **Flow**:
 
@@ -809,14 +900,14 @@ export async function saveThreadMetadata(
 
 **Key Functions**:
 
-1. **`loadReviewCache()`** (lines 40-54)
+1. **`loadReviewCache()`**
 
 - Reads cache file
 - Normalizes data (validates structure)
 - Sorts reviews by `completedAt` timestamp
 - Returns `null` if file doesn't exist
 
-2. **`appendReviewToCache()`** (lines 77-93)
+2. **`appendReviewToCache()`**
 
 - Appends new review to cache
 - Deduplicates by `turnSignature` (replaces if exists)
@@ -825,7 +916,7 @@ export async function saveThreadMetadata(
 
 **Why Deduplicate?**: Same turn might be reviewed multiple times (edge case during race conditions).
 
-3. **`normalizeCache()`** (lines 99-140)
+3. **`normalizeCache()`**
 
 **Purpose**: Validates and sanitizes cache data structure.
 
@@ -934,7 +1025,7 @@ interface HookPayload {
 
 **Key Functions**:
 
-1. **`handlePayload()`** (lines 68-160)
+1. **`handlePayload()`**
 
 **Flow**:
 
@@ -973,7 +1064,7 @@ async function writeFileAtomic(filePath: string, contents: string): Promise<void
 - Best-effort (doesn't throw if logging fails)
 - Includes timestamps
 
-**Project Root Detection** (lines 13-15):
+**Project Root Detection**:
 
 ```typescript
 const projectRoot = process.env.CLAUDE_PROJECT_DIR
@@ -1067,6 +1158,7 @@ interface CritiqueCardProps {
   critique: CritiqueResponse;
   prompt?: string;
   index: number;
+  isPartial?: boolean;  // True if reviewing incomplete response
 }
 ```
 
@@ -1083,7 +1175,7 @@ interface CritiqueCardProps {
   - QUESTIONS (magenta, only if non-empty)
   - MESSAGE FOR AGENT (cyan, only if non-empty)
 
-**Terminal Width Handling** (lines 32-34):
+**Terminal Width Handling**:
 
 ```typescript
 const { stdout } = useStdout();
@@ -1158,19 +1250,22 @@ export type ModelId = (typeof AVAILABLE_MODELS)[number]['id'];  // Union of mode
 ```typescript
 export interface SageSettings {
   selectedModel: string;  // Currently selected model ID
+  debugMode: boolean;     // Show verbose status messages
 }
 ```
 
-### `src/ui/SettingsScreen.tsx` - Model Selection UI
+### `src/ui/SettingsScreen.tsx` - Settings UI
 
-**Purpose**: Terminal UI for selecting AI models.
+**Purpose**: Terminal UI for selecting AI models and toggling debug mode.
 
 **Props**:
 
 ```typescript
 interface SettingsScreenProps {
   currentModel: string;                    // Currently selected model
+  debugMode: boolean;                      // Current debug mode state
   onSelectModel: (modelId: string) => void; // Called when user selects model
+  onToggleDebugMode: () => void;           // Called when user toggles debug
   onBack: () => void;                      // Called when user exits settings
 }
 ```
@@ -1178,7 +1273,8 @@ interface SettingsScreenProps {
 **Features**:
 - Lists all available models from `AVAILABLE_MODELS`
 - Shows checkmark (✓) next to current selection
-- Arrow key navigation with Enter to select
+- Toggle for debug mode (shows verbose status messages)
+- Arrow key navigation with Enter to select/toggle
 - ESC or B to go back
 
 ### `src/ui/Spinner.tsx` - Loading Spinner

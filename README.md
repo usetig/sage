@@ -27,52 +27,41 @@ Coding agents like Claude Code can sound confident while being wrong or incomple
 
 ## Prerequisites
 
-Before installing Sage, ensure you have:
+1. **Claude Code >= 2.0.50** — [Install from claude.ai/download](https://claude.ai/download)
+   ```bash
+   claude --version  # Verify: should be 2.0.50 or higher
+   ```
 
-1. **Node.js 18+** — [Download here](https://nodejs.org/)
-2. **OpenAI Codex SDK credentials** — Configured on your system
-3. **Claude Code** — With at least one session in your repository
-4. **Git repository** — Sage must run in a Git-tracked directory
+2. **OpenAI Codex CLI** — Install and authenticate:
+   ```bash
+   npm install -g @openai/codex
+   codex  # Follow prompts to sign in with your ChatGPT account or use an API key 
+   ```
+   Requires ChatGPT Plus/Pro/Team/Enterprise or an API key. 
+
+3. **Node.js 18+** — [Download here](https://nodejs.org/)
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/usetig/sage.git
-   cd sage
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Build the project:
-   ```bash
-   npm run build
-   ```
+```bash
+npm install -g @tigtech/sage
+```
 
 ## Quick Start
 
-1. **Navigate to your project** (must be a Git repository):
+1. **Navigate to your project** (with Claude Code sessions):
    ```bash
    cd /path/to/your/project
    ```
 
-2. **Start Sage**:
+2. **Run Sage**:
    ```bash
-   npm start
-   ```
-   Or for development with auto-reload:
-   ```bash
-   npm run dev
+   sage
    ```
 
-3. **First run only**: Sage automatically configures Claude hooks in `.claude/settings.local.json`. You'll see "✓ Hooks configured" in the session list.
+3. **First run**: Sage automatically configures Claude hooks. You'll see "✓ Hooks configured".
 
-4. **Select a Claude session** from the interactive picker using arrow keys and Enter
-
-5. **Continue working with Claude Code** - Sage will automatically review new turns as they arrive
+4. **Select a session** and Sage will automatically review Claude's responses as you work.
 
 ## How It Works
 
@@ -173,15 +162,19 @@ Runtime state (sessions, threads, reviews, debug artifacts) is stored globally:
 - Use the `M` key to rescan signals manually
 - Check `~/.sage/{project-path}/runtime/hook-errors.log` for hook execution errors
 
-### Codex connection errors
-- Verify your Codex SDK credentials are configured
-- Check network connectivity
+### "Claude Code not found" error
+- Install Claude Code from https://claude.ai/download
+- Or set `CLAUDE_BIN` environment variable to your Claude binary path
 
-### "Not a git repository" error
-Sage requires running in a Git-tracked directory. Initialize git:
-```bash
-git init
-```
+### "Claude Code version too old" error
+- Update Claude Code to version 2.0.50 or higher
+
+### "Codex CLI not found" error
+- Install Codex: `npm install -g @openai/codex`
+
+### "Codex not authenticated" error
+- Run `codex` and sign in with your ChatGPT account
+- Or set `CODEX_API_KEY` environment variable
 
 ## Known Limitations
 
