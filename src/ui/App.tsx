@@ -1,5 +1,7 @@
 import path from 'path';
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
+import { homedir } from 'os';
+import { execSync } from 'child_process';
 import chokidar, { FSWatcher } from 'chokidar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
@@ -150,6 +152,24 @@ export default function App() {
         console.error('Failed to auto-configure hooks:', err);
         setHookConfigWarning('Could not auto-configure hooks. Run: npm run configure-hooks');
       }
+
+      // Check if Codex CLI is installed
+      try {
+        execSync('which codex', { stdio: 'ignore' });
+      } catch {
+        setError('Codex CLI not found. Install it with: npm install -g @openai/codex');
+        setScreen('error');
+        return;
+      }
+
+      // Check if Codex is authenticated
+      const authFile = path.join(homedir(), '.codex', 'auth.json');
+      if (!existsSync(authFile)) {
+        setError('Codex not authenticated. Run `codex` to sign in, then restart Sage.');
+        setScreen('error');
+        return;
+      }
+
       // Always load sessions regardless of hook config result
       await reloadSessions();
     };
