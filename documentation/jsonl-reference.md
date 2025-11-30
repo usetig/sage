@@ -414,6 +414,20 @@ const hasRealContent = events.some(e =>
 | First user content | "Warmup" | Actual prompt |
 | Has summaries | No | Usually yes |
 
+### 5.4 Disabling Warmups
+
+If you're OK losing the caching speedup, you can disable prompt caching:
+
+```bash
+# bash/zsh
+export DISABLE_PROMPT_CACHING=1
+
+# PowerShell
+$env:DISABLE_PROMPT_CACHING = "1"
+```
+
+Re-enable by unsetting the variable. Note: This trades away latency benefits for cleaner session lists.
+
 **Current Sage Approach (SpecStory markdown):**
 ```typescript
 // src/lib/specstory.ts:200-202
