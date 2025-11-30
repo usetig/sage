@@ -154,8 +154,30 @@ export default function App() {
       }
 
       // Check Claude Code version (requires >= 2.0.50)
+      // Find Claude binary: env var > PATH > local install
+      let claudeBinary: string | null = null;
+      if (process.env.CLAUDE_BIN && existsSync(process.env.CLAUDE_BIN)) {
+        claudeBinary = process.env.CLAUDE_BIN;
+      } else {
+        try {
+          claudeBinary = execSync('which claude', { encoding: 'utf8' }).trim();
+        } catch {
+          // Fall back to local install path
+          const localPath = path.join(homedir(), '.claude', 'local', 'claude');
+          if (existsSync(localPath)) {
+            claudeBinary = localPath;
+          }
+        }
+      }
+
+      if (!claudeBinary) {
+        setError('Claude Code not found. Install it from: https://claude.ai/download');
+        setScreen('error');
+        return;
+      }
+
       try {
-        const versionOutput = execSync('claude --version', { encoding: 'utf8' }).trim();
+        const versionOutput = execSync(`"${claudeBinary}" --version`, { encoding: 'utf8' }).trim();
         const match = versionOutput.match(/^(\d+\.\d+\.\d+)/);
         if (match) {
           const [major, minor, patch] = match[1].split('.').map(Number);
@@ -171,7 +193,7 @@ export default function App() {
           }
         }
       } catch {
-        setError('Claude Code not found. Install it from: https://claude.ai/download');
+        setError('Could not check Claude Code version. Ensure Claude is properly installed.');
         setScreen('error');
         return;
       }
@@ -185,10 +207,10 @@ export default function App() {
         return;
       }
 
-      // Check if Codex is authenticated
+      // Check if Codex is authenticated (env var or auth file)
       const authFile = path.join(homedir(), '.codex', 'auth.json');
-      if (!existsSync(authFile)) {
-        setError('Codex not authenticated. Run `codex` to sign in, then restart Sage.');
+      if (!process.env.CODEX_API_KEY && !existsSync(authFile)) {
+        setError('Codex not authenticated. Run `codex` to sign in, or set CODEX_API_KEY.');
         setScreen('error');
         return;
       }
