@@ -153,6 +153,29 @@ export default function App() {
         setHookConfigWarning('Could not auto-configure hooks. Run: npm run configure-hooks');
       }
 
+      // Check Claude Code version (requires >= 2.0.50)
+      try {
+        const versionOutput = execSync('claude --version', { encoding: 'utf8' }).trim();
+        const match = versionOutput.match(/^(\d+\.\d+\.\d+)/);
+        if (match) {
+          const [major, minor, patch] = match[1].split('.').map(Number);
+          const minVersion = [2, 0, 50];
+          const current = [major, minor, patch];
+          const isValid = current[0] > minVersion[0] ||
+            (current[0] === minVersion[0] && current[1] > minVersion[1]) ||
+            (current[0] === minVersion[0] && current[1] === minVersion[1] && current[2] >= minVersion[2]);
+          if (!isValid) {
+            setError(`Claude Code version ${match[1]} is too old. Please update to >= 2.0.50`);
+            setScreen('error');
+            return;
+          }
+        }
+      } catch {
+        setError('Claude Code not found. Install it from: https://claude.ai/download');
+        setScreen('error');
+        return;
+      }
+
       // Check if Codex CLI is installed
       try {
         execSync('which codex', { stdio: 'ignore' });
