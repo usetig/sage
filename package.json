@@ -27,7 +27,7 @@
     "claude-code"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=18.0.0"
