@@ -900,6 +900,8 @@ export default function App() {
     }
 
     for (const file of files) {
+      // Skip non-JSON files (e.g., .DS_Store on macOS)
+      if (!file.endsWith('.json')) continue;
       const fullPath = path.join(needsReviewDir, file);
       if (processedSignalsRef.current.has(fullPath)) continue;
       processedSignalsRef.current.add(fullPath);

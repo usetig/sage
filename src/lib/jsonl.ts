@@ -66,6 +66,8 @@ export async function listActiveSessions(): Promise<ActiveSession[]> {
 
   const sessions: ActiveSession[] = [];
   for (const entry of entries) {
+    // Skip non-JSON files (e.g., .DS_Store on macOS)
+    if (!entry.endsWith('.json')) continue;
     const metaPath = path.join(SESSIONS_DIR, entry);
     const metadata = readJson(metaPath);
     if (!metadata) continue;
