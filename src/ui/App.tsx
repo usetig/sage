@@ -17,6 +17,7 @@ import type { StreamEvent } from '../lib/codex.js';
 import { CritiqueCard } from './CritiqueCard.js';
 import { ChatCard } from './ChatCard.js';
 import { Spinner } from './Spinner.js';
+import { THINKING_TRIGGER } from './thinking_messages.js';
 import {
   loadReviewCache,
   saveReviewCache,
@@ -1270,7 +1271,7 @@ export default function App() {
 
               {isWaitingForChat ? (
                 <Box marginTop={1}>
-                  <Spinner message="sage is thinking..." />
+                  <Spinner message={THINKING_TRIGGER} />
                 </Box>
               ) : (
                 <Box marginTop={1}>
