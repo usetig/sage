@@ -1,6 +1,6 @@
 {
   "name": "@tigtech/sage",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "AI code reviewer that provides automatic second opinions on Claude Code sessions",
   "main": "./dist/index.js",
   "bin": {
