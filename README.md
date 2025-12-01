@@ -231,7 +231,7 @@ Sage uses:
 
 ### Who are we
 
-Sage is an open source project developed by **Tig**, a YC-backed startup building developer tools for the AI era.
+Sage is an open source project developed by [Tig](https://usetig.dev/), a YC-backed startup building developer tools for the AI era.
 
 ---
 
