@@ -4,7 +4,7 @@ Sage is like a senior engineer that watches your coding agent’s every move.
 
 Unlike existing review tools, Sage doesn’t just look at code — it critiques your agent’s responses, reasoning, and plans so you can catch issues before they’re implemented.
 
-
+[![Watch the demo](https://img.youtube.com/vi/SerQyhBtlwM/0.jpg)](https://youtu.be/SerQyhBtlwM)
 
 ### Why current code review tools fall short
 
