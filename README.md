@@ -1,267 +1,189 @@
 # Sage
 
-**AI code reviewer that provides automatic second opinions on Claude Code sessions**
+Sage is like a senior engineer that watches your coding agent’s every move.
 
-Sage monitors your Claude Code conversations in real-time and delivers structured critique cards—no extra commands required. Get a second pair of eyes on Claude's suggestions without breaking your workflow.
+Unlike existing review tools, Sage doesn’t just look at code — it critiques your agent’s responses, reasoning, and plans so you can catch issues before they’re implemented.
 
-## What Problem Does This Solve?
+---
 
-Coding agents like Claude Code can sound confident while being wrong or incomplete. Developers typically copy conversations into another AI assistant (Cursor, GPT) to cross-check plans, which:
-- Breaks workflow continuity
-- Loses repository context
-- Requires manual intervention
+### Why current code review tools fall short
 
-**Sage automates the second-opinion pass** by reading the same conversation and codebase, providing grounded critiques automatically.
+AI review tools like Greptile and CodeRabbit are excellent at catching syntax errors, edge cases, and security issues. However, they only review code diffs and have no context on the AI conversation that produced them.
 
-## Features
+When you're coding with AI you might spend ~80% of your time planning and discussing approaches with the agent, and ~20% actually writing code. The agent suggests an implementation path, you refine it together, and only then does code get written.
 
-- **Zero-command workflow** - Automatically reviews Claude responses as you work
-- **Repository-aware** - Reads your codebase to provide informed critiques
-- **Structured feedback** - Delivers verdict, reasoning, and alternatives
-- **Thread persistence** - Automatically resumes context when re-selecting sessions
-- **FIFO queue** - Handles multiple turns gracefully, reviews in order
-- **Interactive TUI** - Session picker and real-time critique display
-- **Model selection** - Choose from multiple AI models via settings screen
-- **Debug mode** - Toggle verbose status messages for troubleshooting
-- **Read-only by design** - Never modifies your code
+If there's a fundamental flaw in the approach, reviewing the final code won't catch it. You’ll end up optimizing a suboptimal solution instead of reconsidering the entire direction.
 
-## Prerequisites
+Most issues that diff reviews catch could actually be identified earlier by reviewing the **plan** before any code is written.
 
-1. **Claude Code >= 2.0.50** — [Install from claude.ai/download](https://claude.ai/download)
-   ```bash
-   claude --version  # Verify: should be 2.0.50 or higher
-   ```
+Sage lets you review and critique that plan layer, so you can identify these issues *before* they enter the codebase.
 
-2. **OpenAI Codex CLI** — Install and authenticate:
-   ```bash
-   npm install -g @openai/codex
-   codex  # Follow prompts to sign in with your ChatGPT account or use an API key 
-   ```
-   Requires ChatGPT Plus/Pro/Team/Enterprise or an API key. 
+### Automating model cross-checking
 
-3. **Node.js 18+** — [Download here](https://nodejs.org/)
+Each AI model has different strengths and weaknesses.
 
-## Installation
+Many developers already take advantage of this manually by running two agents side-by-side and copying one’s response into the other for a second opinion.
+
+It works, but it's tedious and completely breaks flow.
+
+Sage automates this process.
+
+- Currently, Sage uses **Codex models** for review.
+- Soon, Sage will have support for multiple flagship models (Claude, Gemini, Grok) to work as a **model council**—inspired by Karpathy’s LLM council concept.
+
+This lets you leverage the unique strengths of each model without leaving your normal workflow.
+
+### How It Works
+
+1. Run `sage` in a new terminal window.
+2. Select the Claude Code thread you want to follow.
+3. Sage will:
+    - Get context on your project
+    - Read the conversation history
+    - Review the latest prompt/response
+
+As Claude responds, Sage automatically reviews each new response. 
+
+Sage is a fully fledged coding agent, so during each review it can read your codebase, search the web, and make tool calls. 
+
+Each Sage session is a single Codex thread and each incremental review is part of the same thread. So sage has the same context your main coding agent has and remembers previous critiques. 
+
+For every Claude Code response, Sage emits a **critique card** that includes:
+
+- **Verdict:** `Approved` / `Concerns` / `Critical Issues`
+- **Alternatives:** suggested better approaches or architectures
+- **Message for agent:** a ready-to-paste message you can send back to Claude Code
+
+You can then copy the “Message for agent” and paste it back into Claude Code (or ignore it if you’re confident in the current approach).
+
+### Setup (Claude Code)
 
 ```bash
+claude --version  # Verify: should be 2.0.50 or higher
+
+npm install -g @openai/codex
+
+codex  # Follow prompts to sign in with your ChatGPT account or use an API key
+
 npm install -g @tigtech/sage
+
+cd /path/to/your/project  # Navigate to your project
+
+sage  # Run Sage (in a separate terminal window)
+
+claude # start a new claude thread 
 ```
 
-## Quick Start
+1. On first run, Sage automatically configures Claude hooks. You should see:
+    
+    `✓ Hooks configured`
+    
+2. **Select a session**, and Sage will automatically review Claude’s responses as you work.
 
-1. **Navigate to your project** (with Claude Code sessions):
-   ```bash
-   cd /path/to/your/project
-   ```
+---
 
-2. **Run Sage**:
-   ```bash
-   sage
-   ```
+### Empirical Benefits
 
-3. **First run**: Sage automatically configures Claude hooks. You'll see "✓ Hooks configured".
+Sage itself hasn’t been benchmarked on public leaderboards yet, but its design follows patterns that have already shown measurable gains in independent studies:
 
-4. **Select a session** and Sage will automatically review Claude's responses as you work.
+- **Multi-agent workflows improve pass rates.**
+    
+    *Blueprint2Code*, a multi-agent system with separate planning, coding, and debugging agents, achieves **pass@1 scores of 96.3% on HumanEval and 88.4% on MBPP**, and significantly outperforms baselines such as CoT, Reflexion, and MapCoder on multiple code benchmarks (Mao et al., 2025). Sage adopts the same idea of separating “designer” and “checker” roles, but does it around your existing coding agent instead of replacing it.
+    
+- **Cross-model ensembles are more reliable than a single model.**
+    
+    An ensemble approach for LLM code generation that aggregates candidates from multiple models via similarity-based voting reaches **90.2% accuracy on HumanEval and 50.2% on LiveCodeBench**, compared to **83.5% and 43.4%** for the best single model (Mahmud et al., 2025). This is the intuition behind Sage’s roadmap for a “model council” that can cross-check your primary coding agent.
+    
+- **Tool-interactive critiquing consistently improves quality.**
+    
+    The CRITIC framework lets LLMs verify and revise their own outputs using external tools (search, code interpreters, calculators) and shows **+7.7 F1 across QA tasks, +7.0% absolute gains on mathematical reasoning benchmarks, and a 79.2% reduction in toxicity probability** compared to base models (Gou et al., 2024). Sage uses the same verify-then-correct loop: it can call tools, inspect your codebase, and feed back structured critiques instead of trusting a single pass.
+    
 
-## How It Works
+Sage packages these ideas into a single, non-intrusive layer that sits on top of your existing coding agent, so you can get similar benefits in day-to-day development without changing your workflow. 
 
-### First Run Setup
-On launch, Sage automatically:
-1. **Configures Claude hooks** (first run only) - installs hooks in `.claude/settings.local.json`
-2. Ensures runtime directories exist under `~/.sage/{project-path}/runtime/`
-3. Reads active session metadata captured by the Claude hooks
-4. Displays an interactive session picker
+**References:** 
 
-### Continuous Review Mode
-After selecting a session:
-1. **Initial Review** – Sage loads the transcript directly from Claude’s JSONL log and critiques the most recent turn
-2. **Hook Signals** – Claude’s hooks write per-session “needs-review” signals; Sage watches these files for new work
-3. **Queue Processing** – New turns are detected, queued (FIFO), and reviewed incrementally
-4. **Critique Cards** – Structured feedback appears in the terminal as reviews complete
+1. Mao, Kehao, Baokun Hu, Ruixin Lin, Zewen Li, Guanyu Lu, and Zhengyu Zhang.
+    
+    **“Blueprint2Code: a multi-agent pipeline for reliable code generation via blueprint planning and repair.”**
+    
+    *Frontiers in Artificial Intelligence*, Volume 8, 2025.
+    
+    https://doi.org/10.3389/frai.2025.1660912
+    
+2. Mahmud, Tarek, Bin Duan, Corina Pasareanu, and Guowei Yang.
+    
+    **“Enhancing LLM Code Generation with Ensembles: A Similarity-Based Selection Approach.”**
+    
+    arXiv preprint arXiv:2503.15838, 2025.
+    
+    https://arxiv.org/abs/2503.15838
+    
+3. Gou, Zhibin, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu Chen.
+    
+    **“CRITIC: Large Language Models Can Self-Correct with Tool-Interactive Critiquing.”**
+    
+    arXiv preprint arXiv:2305.11738, 2023. (ICLR 2024.)
+    
+    https://arxiv.org/abs/2305.11738
+    
 
-### Critique Card Structure
-Each review includes:
-- **Verdict**: Approved | Concerns | Critical Issues
-- **Why**: Main reasoning and issues found
-- **Alternatives**: Suggested alternative approaches (if applicable)
+### Roadmap
 
-## Documentation
+**Tool support**
 
-- **[Architecture Guide](documentation/CODEBASE_GUIDE.md)** - Comprehensive technical reference
-- **[Contributing](agents.md)** - Guidelines for contributors and AI agents
-- **[Troubleshooting](documentation/thread-persistence.md)** - Advanced state management
+- ✅ Claude Code – **Finished**
+- 🔄 Codex IDE & CLI – **In progress**
+- 🔄 Cursor – **In progress**
+- ⏳ Gemini CLI – **Not started**
+- ⏳ Kilo Code – **Not started**
 
-## Keyboard Controls
+**Review agent support**
 
-### Session Picker
-- `↑` / `↓` - Navigate sessions
-- `Enter` - Select session to review
-- `R` - Refresh session list
-- `S` - Open settings (model selection)
-- `Ctrl+C` - Exit
+- ✅ OpenAI models – **Finished**
+- 🔄 Anthropic models – **In progress**
+- ⏳ Gemini models – **Not started**
+- ⏳ Open source models – **Not started**
 
-### Continuous Review Mode
-- `M` - Manually rescan hook signals (force review)
-- `C` - Chat with Sage about the current review
-- `B` - Back to session picker
-- `Ctrl+O` - Toggle stream overlay
-- `Ctrl+C` - Exit
+### Troubleshooting
 
-### Settings Screen
-- `↑` / `↓` - Navigate options (models, debug toggle)
-- `Enter` - Select model or toggle debug mode
-- `Esc` / `B` - Back to session picker
+**No sessions appear in picker**
 
-## Project Structure
-
-```
-sage/
-├── src/
-│   ├── index.tsx              # Entry point
-│   ├── types.ts               # TypeScript interfaces
-│   ├── lib/                   # Core business logic
-│   │   ├── codex.ts          # Codex SDK wrapper & prompts
-│   │   ├── jsonl.ts          # Claude JSONL parsing utilities
-│   │   ├── review.ts         # Review orchestration
-│   │   ├── threads.ts        # Thread metadata & resumption
-│   │   ├── models.ts         # Available AI models configuration
-│   │   ├── settings.ts       # User settings persistence
-│   │   └── debug.ts          # Artifact utilities
-│   ├── hooks/                # Claude hook shim (invoked by Claude Code)
-│   │   └── sageHook.ts
-│   ├── ui/                   # Terminal UI components
-│   │   ├── App.tsx           # Main TUI orchestrator
-│   │   ├── CritiqueCard.tsx  # Critique renderer
-│   │   └── SettingsScreen.tsx # Model selection UI
-│   └── scripts/              # Developer utilities (hook installer)
-│       └── configureHooks.ts
-└── documentation/             # Reference docs
-
-Runtime state (sessions, threads, reviews, debug artifacts) is stored globally:
-~/.sage/
-└── {encoded-project-path}/    # e.g., Users-you-projects-myapp/
-    ├── runtime/
-    ├── threads/
-    ├── reviews/
-    └── debug/                 # Artifact files written for inspection
-```
-
-## Troubleshooting
-
-### No sessions appear in picker
 - Verify you've used Claude Code in this repository before
 - Restart Sage to trigger auto-configuration of Claude hooks
 - Or run `npm run configure-hooks` manually if auto-configuration fails
 - Check that `~/.sage/{project-path}/runtime/sessions/` contains metadata files
 - Press `R` to refresh the session list in Sage
 
-### Reviews aren't triggering automatically
+**Reviews aren't triggering automatically**
+
 - Confirm `.claude/settings.local.json` contains Sage's hook command
 - Inspect `~/.sage/{project-path}/runtime/needs-review/` for pending signal files
 - Use the `M` key to rescan signals manually
 - Check `~/.sage/{project-path}/runtime/hook-errors.log` for hook execution errors
 
-### "Claude Code not found" error
+**"Claude Code not found" error**
+
 - Install Claude Code from https://claude.ai/download
 - Or set `CLAUDE_BIN` environment variable to your Claude binary path
 
-### "Claude Code version too old" error
+**"Claude Code version too old" error**
+
 - Update Claude Code to version 2.0.50 or higher
 
-### "Codex CLI not found" error
+**"Codex CLI not found" error**
+
 - Install Codex: `npm install -g @openai/codex`
 
-### "Codex not authenticated" error
+**"Codex not authenticated" error**
+
 - Run `codex` and sign in with your ChatGPT account
 - Or set `CODEX_API_KEY` environment variable
 
-## Known Limitations
-
-- **Single-instance assumption** — Running multiple Sage processes against the same repository can race on `~/.sage/{project-path}/` state files. Keep one instance active per repo to avoid desynchronised queues or duplicate critiques.
-- **Incomplete responses on manual selection** — If you select a session while Claude is still typing, the initial review may fail or produce inaccurate critique. Wait for Claude to finish its response before selecting the session. Continuous mode is unaffected and works correctly.
-- **iTerm2 Flickering** — Users may experience flickering when using iTerm2 due to its handling of rapid screen updates. This is a known issue with the underlying Ink library and iTerm2. Using the default macOS Terminal or VS Code's integrated terminal is recommended if this persists.
-
-## Configuration
-
-### Hook Configuration
-Sage **automatically configures hooks on first run**. When you start Sage in a new project, it detects missing hooks and adds them to `.claude/settings.local.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"", "timeout": 30 }] }],
-    "Stop":         [{ "hooks": [{ "type": "command", "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"", "timeout": 30 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node \"/path/to/sage/dist/hooks/sageHook.js\"", "timeout": 30 }] }]
-  }
-}
-```
-
-**Manual setup**: If auto-configuration fails (shown as a warning), run `npm run configure-hooks`.
-
-Claude invokes these hooks for the active session, and Sage stores the resulting metadata under `~/.sage/{project-path}/runtime/`.
-
-### Settings
-
-Press `S` from the session picker to open the settings screen.
-
-**Model Selection**: Choose from multiple AI models for code review:
-- GPT-5.1 Codex (default)
-- GPT-5.1 Codex Mini
-- GPT-5.1
-- GPT-5
-- GPT-5 Mini
-- GPT-5 Nano
-- GPT-4.1
-- GPT-4.1 Mini
-- GPT-4.1 Nano
-
-**Debug Mode**: Toggle verbose status messages on/off. When enabled, you'll see:
-- Persistent message history at the top of the screen (queued reviews, errors, cache events)
-- Codex thread ID display
-- Detailed queue information
-
-Without debug mode, you'll still see real-time spinner messages (e.g., "Sage is thinking...", "analyzing codebase context...") but no persistent history. Debug mode is off by default for a cleaner UI.
-
-All settings are stored in `~/.sage/settings.json` and persist across sessions.
-
-### Directory Structure
-
-**Global Sage Directory** (`~/.sage/`):
-
-- `~/.sage/settings.json` - User preferences (model selection, debug mode)
-
-Each project gets its own subdirectory based on its full path (e.g., `/Users/you/projects/myapp` → `~/.sage/Users-you-projects-myapp/`):
-
-- `~/.sage/{project-path}/runtime/sessions/` - Active-session metadata captured from hooks
-- `~/.sage/{project-path}/runtime/needs-review/` - Signal files that queue critiques
-- `~/.sage/{project-path}/runtime/hook-errors.log` - Hook execution error log
-- `~/.sage/{project-path}/threads/` - Codex thread metadata for resumption (auto-generated)
-- `~/.sage/{project-path}/reviews/` - Cached critique history (auto-generated)
-
-**Local Project Files**:
-
-- `.claude/settings.local.json` - Claude Code hooks (auto-configured)
-
-## Development
-
-### Run in development mode (auto-restart on changes):
-```bash
-npm run dev
-```
-
-### Build TypeScript:
-```bash
-npm run build
-```
-
-### Run production build:
-```bash
-npm start
-```
-
-## Architecture
+### Architecture
 
 Sage uses:
+
 - **React + Ink** - Terminal UI framework
 - **OpenAI Codex SDK** - AI agent for code review
 - **Claude Code hooks** - Session lifecycle + prompt metadata
@@ -269,22 +191,22 @@ Sage uses:
 - **Chokidar** - File watching for continuous mode
 - **TypeScript** - Type-safe implementation
 
-## Contributing
+### Known Limitations
 
-See [agents.md](./agents.md) for contributor guidelines and architecture details.
+- **Claude Code plan mode requires manual sync to review proposed plans.**
+- **iTerm2 flickering**
+    
+    Users may experience flickering in iTerm2 due to its handling of rapid screen updates.
+    
+    This is a known issue with the underlying Ink library and iTerm2.
+    
+    Using the default macOS Terminal or VS Code’s integrated terminal is recommended if this persists.
+    
 
-## Known Limitations
+### Contributing
 
-- Does not follow resumed session chains back to parent sessions
-- No arrow-key navigation within critique history
-- Minimal persistent logging to console (artifacts available in `~/.sage/{project}/debug/`)
-- Warmup-only sessions are filtered but take up session IDs
+See [agents.md](./agents.md) and [documentation/CODEBASE_GUIDE.md](./documentation/CODEBASE_GUIDE.md) for contributor guidelines and architecture details.
 
-## License
+### License
 
-ISC
-
-## Links
-
-- **Repository**: https://github.com/usetig/sage
-- **Issues**: https://github.com/usetig/sage/issues
+MIT
