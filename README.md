@@ -4,7 +4,7 @@ Sage is like a senior engineer that watches your coding agent’s every move.
 
 Unlike existing review tools, Sage doesn’t just look at code — it critiques your agent’s responses, reasoning, and plans so you can catch issues before they’re implemented.
 
----
+
 
 ### Why current code review tools fall short
 
@@ -14,7 +14,7 @@ When you're coding with AI you might spend ~80% of your time planning and discus
 
 If there's a fundamental flaw in the approach, reviewing the final code won't catch it. You’ll end up optimizing a suboptimal solution instead of reconsidering the entire direction.
 
-Most issues that diff reviews catch could actually be identified earlier by reviewing the **plan** before any code is written.
+Most issues that diff reviews catch could actually be identified earlier by reviewing the plan before any code is written.
 
 Sage lets you review and critique that plan layer, so you can identify these issues *before* they enter the codebase.
 
@@ -28,8 +28,8 @@ It works, but it's tedious and completely breaks flow.
 
 Sage automates this process.
 
-- Currently, Sage uses **Codex models** for review.
-- Soon, Sage will have support for multiple flagship models (Claude, Gemini, Grok) to work as a **model council**—inspired by Karpathy’s LLM council concept.
+- Currently, Sage uses Codex models for review.
+- Soon, Sage will have support for multiple flagship models (Claude, Gemini, Grok) to work as a model council—inspired by Karpathy's LLM council concept.
 
 This lets you leverage the unique strengths of each model without leaving your normal workflow.
 
@@ -48,7 +48,7 @@ Sage is a fully fledged coding agent, so during each review it can read your cod
 
 Each Sage session is a single Codex thread and each incremental review is part of the same thread. So sage has the same context your main coding agent has and remembers previous critiques. 
 
-For every Claude Code response, Sage emits a **critique card** that includes:
+For every Claude Code response, Sage emits a critique card that includes:
 
 - **Verdict:** `Approved` / `Concerns` / `Critical Issues`
 - **Alternatives:** suggested better approaches or architectures
@@ -78,7 +78,7 @@ claude # start a new claude thread
     
     `✓ Hooks configured`
     
-2. **Select a session**, and Sage will automatically review Claude’s responses as you work.
+2. Select a session, and Sage will automatically review Claude's responses as you work.
 
 ---
 
@@ -88,15 +88,15 @@ Sage itself hasn’t been benchmarked on public leaderboards yet, but its design
 
 - **Multi-agent workflows improve pass rates.**
     
-    *Blueprint2Code*, a multi-agent system with separate planning, coding, and debugging agents, achieves **pass@1 scores of 96.3% on HumanEval and 88.4% on MBPP**, and significantly outperforms baselines such as CoT, Reflexion, and MapCoder on multiple code benchmarks (Mao et al., 2025). Sage adopts the same idea of separating “designer” and “checker” roles, but does it around your existing coding agent instead of replacing it.
+    *Blueprint2Code*, a multi-agent system with separate planning, coding, and debugging agents, achieves pass@1 scores of 96.3% on HumanEval and 88.4% on MBPP, and significantly outperforms baselines such as CoT, Reflexion, and MapCoder on multiple code benchmarks (Mao et al., 2025). Sage adopts the same idea of separating "designer" and "checker" roles, but does it around your existing coding agent instead of replacing it.
     
 - **Cross-model ensembles are more reliable than a single model.**
     
-    An ensemble approach for LLM code generation that aggregates candidates from multiple models via similarity-based voting reaches **90.2% accuracy on HumanEval and 50.2% on LiveCodeBench**, compared to **83.5% and 43.4%** for the best single model (Mahmud et al., 2025). This is the intuition behind Sage’s roadmap for a “model council” that can cross-check your primary coding agent.
+    An ensemble approach for LLM code generation that aggregates candidates from multiple models via similarity-based voting reaches 90.2% accuracy on HumanEval and 50.2% on LiveCodeBench, compared to 83.5% and 43.4% for the best single model (Mahmud et al., 2025). This is the intuition behind Sage's roadmap for a "model council" that can cross-check your primary coding agent.
     
 - **Tool-interactive critiquing consistently improves quality.**
     
-    The CRITIC framework lets LLMs verify and revise their own outputs using external tools (search, code interpreters, calculators) and shows **+7.7 F1 across QA tasks, +7.0% absolute gains on mathematical reasoning benchmarks, and a 79.2% reduction in toxicity probability** compared to base models (Gou et al., 2024). Sage uses the same verify-then-correct loop: it can call tools, inspect your codebase, and feed back structured critiques instead of trusting a single pass.
+    The CRITIC framework lets LLMs verify and revise their own outputs using external tools (search, code interpreters, calculators) and shows +7.7 F1 across QA tasks, +7.0% absolute gains on mathematical reasoning benchmarks, and a 79.2% reduction in toxicity probability compared to base models (Gou et al., 2024). Sage uses the same verify-then-correct loop: it can call tools, inspect your codebase, and feed back structured critiques instead of trusting a single pass.
     
 
 Sage packages these ideas into a single, non-intrusive layer that sits on top of your existing coding agent, so you can get similar benefits in day-to-day development without changing your workflow. 
