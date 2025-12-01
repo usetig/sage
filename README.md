@@ -16,14 +16,19 @@ Unlike existing review tools, Sage doesn't just look at code — it critiques yo
 - [Troubleshooting](#troubleshooting)
 - [Architecture](#architecture)
 - [Known Limitations](#known-limitations)
+- [Who are we](#who-are-we)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Demo
+---
+
+### Demo
 
 Click the image below to watch the demo:
 
 [![Watch the Sage demo](./assets/images/demo-thumbnail.png)](https://www.youtube.com/watch?v=SerQyhBtlwM)
+
+---
 
 ### Why current code review tools fall short
 
@@ -36,6 +41,8 @@ If there's a fundamental flaw in the approach, reviewing the final code won't ca
 Most issues that diff reviews catch could actually be identified earlier by reviewing the plan before any code is written.
 
 Sage lets you review and critique that plan layer, so you can identify these issues *before* they enter the codebase.
+
+---
 
 ### Automating model cross-checking
 
@@ -51,6 +58,8 @@ Sage automates this process.
 - Soon, Sage will have support for multiple flagship models (Claude, Gemini, Grok) to work as a model council—inspired by Karpathy's LLM council concept.
 
 This lets you leverage the unique strengths of each model without leaving your normal workflow.
+
+---
 
 ### How It Works
 
@@ -74,6 +83,8 @@ For every Claude Code response, Sage emits a critique card that includes:
 - **Message for agent:** a ready-to-paste message you can send back to Claude Code
 
 You can then copy the “Message for agent” and paste it back into Claude Code (or ignore it if you’re confident in the current approach).
+
+---
 
 ### Setup (Claude Code)
 
@@ -134,6 +145,8 @@ Sage packages these ideas into a single, non-intrusive layer that sits on top of
 
 </details>
 
+---
+
 ### Roadmap
 
 **Tool support**
@@ -150,6 +163,8 @@ Sage packages these ideas into a single, non-intrusive layer that sits on top of
 - 🔄 Anthropic models – **In progress**
 - ⏳ Gemini models – **Not started**
 - ⏳ Open source models – **Not started**
+
+---
 
 ### Troubleshooting
 
@@ -186,6 +201,8 @@ Sage packages these ideas into a single, non-intrusive layer that sits on top of
 - Run `codex` and sign in with your ChatGPT account
 - Or set `CODEX_API_KEY` environment variable
 
+---
+
 ### Architecture
 
 Sage uses:
@@ -196,6 +213,8 @@ Sage uses:
 - **Claude JSONL transcripts** - Source of truth for conversation turns
 - **Chokidar** - File watching for continuous mode
 - **TypeScript** - Type-safe implementation
+
+---
 
 ### Known Limitations
 
@@ -208,13 +227,19 @@ Sage uses:
     
     Using the default macOS Terminal or VS Code’s integrated terminal is recommended if this persists.
 
+---
+
 ### Who are we
 
 Sage is an open source project developed by **Tig**, a YC-backed startup building developer tools for the AI era.
 
+---
+
 ### Contributing
 
 See [agents.md](./agents.md) and [documentation/CODEBASE_GUIDE.md](./documentation/CODEBASE_GUIDE.md) for contributor guidelines and architecture details.
+
+---
 
 ### License
 
