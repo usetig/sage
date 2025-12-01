@@ -218,14 +218,19 @@ Sage uses:
 
 ### Known Limitations
 
-- **Claude Code plan mode requires manual sync to review proposed plans.**
-- **iTerm2 flickering**
-    
-    Users may experience flickering in iTerm2 due to its handling of rapid screen updates.
-    
-    This is a known issue with the underlying Ink library and iTerm2.
-    
-    Using the default macOS Terminal or VS Code’s integrated terminal is recommended if this persists.
+<details>
+<summary><strong>Claude Code plan mode requires manual sync to review proposed plans</strong></summary>
+
+When Claude Code is in plan mode and emits a proposed plan, there are no available hooks that fire at that moment. Sage will automatically review the plan once Claude's response finishes and the `Stop` hook fires. However, if you want Sage to review the plan before you accept it, you can press `M` to manually trigger a review.
+
+</details>
+
+<details>
+<summary><strong>iTerm2 flickering</strong></summary>
+
+Users may experience flickering in iTerm2 due to its handling of rapid screen updates. This is a known issue with the underlying Ink library and iTerm2. Using the default macOS Terminal or VS Code's integrated terminal is recommended if this persists.
+
+</details>
 
 ---
 
