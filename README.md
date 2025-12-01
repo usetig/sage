@@ -1,10 +1,29 @@
 # Sage
 
-Sage is like a senior engineer that watches your coding agent’s every move.
+Sage is like a senior engineer that watches your coding agent's every move.
 
-Unlike existing review tools, Sage doesn’t just look at code — it critiques your agent’s responses, reasoning, and plans so you can catch issues before they’re implemented.
+Unlike existing review tools, Sage doesn't just look at code — it critiques your agent's responses, reasoning, and plans so you can catch issues before they're implemented.
 
-[![Watch the demo](https://img.youtube.com/vi/SerQyhBtlwM/0.jpg)](https://youtu.be/SerQyhBtlwM)
+## Table of Contents
+
+- [Demo](#demo)
+- [Why current code review tools fall short](#why-current-code-review-tools-fall-short)
+- [Automating model cross-checking](#automating-model-cross-checking)
+- [How It Works](#how-it-works)
+- [Setup](#setup-claude-code)
+- [Empirical Benefits](#empirical-benefits)
+- [Roadmap](#roadmap)
+- [Troubleshooting](#troubleshooting)
+- [Architecture](#architecture)
+- [Known Limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Demo
+
+Click the image below to watch the demo:
+
+[![Watch the Sage demo](./assets/images/demo-thumbnail.png)](https://www.youtube.com/watch?v=SerQyhBtlwM)
 
 ### Why current code review tools fall short
 
@@ -99,34 +118,21 @@ Sage itself hasn’t been benchmarked on public leaderboards yet, but its design
     The CRITIC framework lets LLMs verify and revise their own outputs using external tools (search, code interpreters, calculators) and shows +7.7 F1 across QA tasks, +7.0% absolute gains on mathematical reasoning benchmarks, and a 79.2% reduction in toxicity probability compared to base models (Gou et al., 2024). Sage uses the same verify-then-correct loop: it can call tools, inspect your codebase, and feed back structured critiques instead of trusting a single pass.
     
 
-Sage packages these ideas into a single, non-intrusive layer that sits on top of your existing coding agent, so you can get similar benefits in day-to-day development without changing your workflow. 
+Sage packages these ideas into a single, non-intrusive layer that sits on top of your existing coding agent, so you can get similar benefits in day-to-day development without changing your workflow.
 
-**References:** 
+<details>
+<summary><strong>References</strong></summary>
 
-1. Mao, Kehao, Baokun Hu, Ruixin Lin, Zewen Li, Guanyu Lu, and Zhengyu Zhang.
-    
-    **“Blueprint2Code: a multi-agent pipeline for reliable code generation via blueprint planning and repair.”**
-    
-    *Frontiers in Artificial Intelligence*, Volume 8, 2025.
-    
-    https://doi.org/10.3389/frai.2025.1660912
-    
-2. Mahmud, Tarek, Bin Duan, Corina Pasareanu, and Guowei Yang.
-    
-    **“Enhancing LLM Code Generation with Ensembles: A Similarity-Based Selection Approach.”**
-    
-    arXiv preprint arXiv:2503.15838, 2025.
-    
-    https://arxiv.org/abs/2503.15838
-    
-3. Gou, Zhibin, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu Chen.
-    
-    **“CRITIC: Large Language Models Can Self-Correct with Tool-Interactive Critiquing.”**
-    
-    arXiv preprint arXiv:2305.11738, 2023. (ICLR 2024.)
-    
-    https://arxiv.org/abs/2305.11738
-    
+1. **Blueprint2Code: a multi-agent pipeline for reliable code generation via blueprint planning and repair.**
+   Mao et al., *Frontiers in Artificial Intelligence*, 2025. [doi:10.3389/frai.2025.1660912](https://doi.org/10.3389/frai.2025.1660912)
+
+2. **Enhancing LLM Code Generation with Ensembles: A Similarity-Based Selection Approach.**
+   Mahmud et al., *arXiv:2503.15838*, 2025. [arXiv:2503.15838](https://arxiv.org/abs/2503.15838)
+
+3. **CRITIC: Large Language Models Can Self-Correct with Tool-Interactive Critiquing.**
+   Gou et al., *ICLR 2024*. [arXiv:2305.11738](https://arxiv.org/abs/2305.11738)
+
+</details>
 
 ### Roadmap
 
@@ -201,7 +207,10 @@ Sage uses:
     This is a known issue with the underlying Ink library and iTerm2.
     
     Using the default macOS Terminal or VS Code’s integrated terminal is recommended if this persists.
-    
+
+### Who are we
+
+Sage is an open source project developed by **Tig**, a YC-backed startup building developer tools for the AI era.
 
 ### Contributing
 
