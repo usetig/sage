@@ -24,8 +24,6 @@ Unlike existing review tools, Sage doesn't just look at code — it critiques yo
 
 ### Demo
 
-Click the image below to watch the demo:
-
 [![Watch the Sage demo](./assets/images/demo-thumbnail.png)](https://www.youtube.com/watch?v=SerQyhBtlwM)
 
 ---
@@ -54,7 +52,7 @@ It works, but it's tedious and completely breaks flow.
 
 Sage automates this process.
 
-- Currently, Sage uses Codex models for review.
+- Currently, Sage uses the OpenAI Codex SDK for review.
 - Soon, Sage will have support for multiple flagship models (Claude, Gemini, Grok) to work as a model council—inspired by Karpathy's LLM council concept.
 
 This lets you leverage the unique strengths of each model without leaving your normal workflow.
@@ -87,6 +85,8 @@ You can then copy the “Message for agent” and paste it back into Claude Code
 ---
 
 ### Setup (Claude Code)
+
+> **Note:** Sage has only been tested on macOS. Support for other operating systems may be limited.
 
 ```bash
 claude --version  # Verify: should be 2.0.50 or higher
@@ -229,7 +229,7 @@ Sage uses:
 
 ---
 
-### Who are we
+### Who We Are
 
 Sage is an open source project developed by [Tig](https://usetig.dev/), a YC-backed startup building developer tools for the AI era.
 
