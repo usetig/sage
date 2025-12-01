@@ -6,3 +6,4 @@ dist/
 .env
 .debug/
 .cursor/worktrees.json
+external-docs/
