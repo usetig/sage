@@ -49,7 +49,7 @@ export async function ensureHooksConfigured(): Promise<HookConfigResult> {
       entry &&
       Array.isArray(entry.hooks) &&
       entry.hooks.some(
-        (hook: any) => hook && hook.type === 'command' && typeof hook.command === 'string' && hook.command.includes('sageHook.ts'),
+        (hook: any) => hook && hook.type === 'command' && typeof hook.command === 'string' && hook.command.includes('sageHook'),
       ),
     );
 
