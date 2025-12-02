@@ -101,8 +101,10 @@ cd /path/to/your/project  # Navigate to your project
 
 sage  # Run Sage (in a separate terminal window)
 
-claude # start a new claude thread 
+claude # start a new claude thread
 ```
+
+> **Note:** Sage can only detect sessions created after installation. To review an existing session, resume it with `claude --resume <session-id>`.
 
 1. On first run, Sage automatically configures Claude hooks. You should see:
     
@@ -229,6 +231,13 @@ When Claude Code is in plan mode and emits a proposed plan, there are no availab
 <summary><strong>iTerm2 flickering</strong></summary>
 
 Users may experience flickering in iTerm2 due to its handling of rapid screen updates. This is a known issue with the underlying Ink library and iTerm2. Using the default macOS Terminal or VS Code's integrated terminal is recommended if this persists.
+
+</details>
+
+<details>
+<summary><strong>Only sessions created after Sage installation are visible</strong></summary>
+
+Sage detects Claude Code sessions via hooks that fire on session events. Sessions created before Sage was installed (or before hooks were configured) won't appear in the session picker. To review an older session, close it and resume with `claude --resume <session-id>`, which will trigger the hooks and make it visible to Sage.
 
 </details>
 
