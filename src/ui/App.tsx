@@ -1078,7 +1078,7 @@ export default function App() {
         setSelectedIndex(0);
         setScreen('session-list');
       } else {
-        setError('No active Claude Code sessions found for this repository.');
+        setError('No sessions detected. Sage can only see sessions created after hook installation.\nStart a new session with `claude` or resume an existing one with `claude --resume <session-id>`.');
         setScreen('error');
       }
     } catch (err) {

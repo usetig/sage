@@ -241,6 +241,13 @@ Sage detects Claude Code sessions via hooks that fire on session events. Session
 
 </details>
 
+<details>
+<summary><strong>Resumed sessions appear as separate entries</strong></summary>
+
+When you resume a Claude Code session with `claude --resume`, it creates a new transcript file with a new session ID. This means resumed sessions appear as separate entries in Sage's session picker. The resumed session contains the full conversation history, so Sage can review it properly.
+
+</details>
+
 ---
 
 ### Who We Are
