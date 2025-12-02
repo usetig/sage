@@ -76,9 +76,15 @@ export async function listActiveSessions(): Promise<ActiveSession[]> {
     }
     const isWarmup = await isWarmupSession(metadata.transcriptPath);
     if (isWarmup) continue;
+
+    let titlePrompt: string | undefined = metadata.lastPrompt;
+    if (!titlePrompt) {
+      titlePrompt = (await getLastPromptFromTranscript(metadata.transcriptPath)) ?? undefined;
+    }
+
     sessions.push({
       ...metadata,
-      title: metadata.lastPrompt ? previewText(metadata.lastPrompt) : metadata.sessionId,
+      title: titlePrompt ? previewText(titlePrompt) : 'New conversation',
     });
   }
 
@@ -482,6 +488,35 @@ async function isWarmupSession(transcriptPath: string): Promise<boolean> {
     stream.close();
   }
   return false;
+}
+
+async function getLastPromptFromTranscript(transcriptPath: string): Promise<string | null> {
+  const stream = fs.createReadStream(transcriptPath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  let lastPrompt: string | null = null;
+  try {
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      let entry: any;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (entry?.isSidechain) continue;
+      if (entry?.isCompactSummary || entry?.isMeta) continue;
+      if (entry?.type === 'user' && entry?.message && isPrimaryUserPrompt(entry)) {
+        const text = extractText(entry.message);
+        if (text.trim()) {
+          lastPrompt = text;
+        }
+      }
+    }
+  } finally {
+    rl.close();
+    stream.close();
+  }
+  return lastPrompt;
 }
 
 function extractText(message: any): string {
