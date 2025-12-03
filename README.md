@@ -261,7 +261,7 @@ When you resume a Claude Code session with `claude --resume`, it creates a new t
 
 ### Who We Are
 
-Sage is an open source project developed by [Tig](https://usetig.dev/), a YC-backed startup building developer tools for the AI era.
+Sage is an open source project developed by [Tig](https://usetig.dev/), a YC-backed startup building tools for devs who vibecode.
 
 ---
 
