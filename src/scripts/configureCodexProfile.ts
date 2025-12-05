@@ -22,12 +22,12 @@ const DEFAULT_PROFILE: TomlValue = {
   model: DEFAULT_MODEL,
   approval_policy: 'never',
   sandbox_mode: 'workspace-write',
-  allow_search: true,
-  description: 'Sage read-only profile with Context7 MCP and search enabled',
+  description: 'Sage read-only profile with Context7 MCP and web search enabled',
 };
 
 const DEFAULT_FEATURES: TomlValue = {
   rmcp_client: true,
+  web_search_request: true,
 };
 
 const DEFAULT_MCP_SERVERS: Record<string, TomlValue> = {

@@ -113,7 +113,7 @@ sage  # Run Sage (in a separate terminal window)
 claude # start a new claude thread
 
 # Optional: configure Codex profile + MCP defaults for Sage
-sage config  # creates/updates ~/.codex/config.toml with a Sage profile, RMCP enabled, Context7 MCP, search allowed
+sage config  # creates/updates ~/.codex/config.toml with a Sage profile, RMCP + web search enabled, Context7 MCP
 ```
 
 > **Note:** Sage can only detect sessions created after installation. To review an existing session, resume it with `claude --resume <session-id>`.
