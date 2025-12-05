@@ -1719,7 +1719,7 @@ const result = await thread.run(prompt, { outputSchema: CRITIQUE_SCHEMA });
 
 - Sage does not override Codex settings; it inherits whatever is in `~/.codex/config.toml` (and `managed_config.toml` if present). Approval policy, sandbox mode, and allowed MCP servers all carry through to Sage reviews.
 - Treat this as both an opportunity and caution. Sage is intended for read only use. MCP servers such as Context7 will only give you more reliable, helpful verdicts.
-- TODO: Add support for creating a `.codex/config.toml` preset for Sage use.
+- `sage config` creates/updates a dedicated `profiles.sage` entry with read-only defaults, RMCP enabled, search allowed, and a Context7 MCP server so Sage can review with the same capabilities every run.
 
 ### File System Integration
 

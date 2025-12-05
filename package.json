@@ -38,6 +38,7 @@
   "homepage": "https://github.com/usetig/sage#readme",
   "dependencies": {
     "@openai/codex-sdk": "^0.48.0",
+    "@iarna/toml": "^3.0.0",
     "chokidar": "^3.6.0",
     "ink": "^6.3.1",
     "react": "^19.2.0"

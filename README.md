@@ -111,6 +111,9 @@ cd /path/to/your/project  # Navigate to your project
 sage  # Run Sage (in a separate terminal window)
 
 claude # start a new claude thread
+
+# Optional: configure Codex profile + MCP defaults for Sage
+sage config  # creates/updates ~/.codex/config.toml with a Sage profile, RMCP enabled, Context7 MCP, search allowed
 ```
 
 > **Note:** Sage can only detect sessions created after installation. To review an existing session, resume it with `claude --resume <session-id>`.
@@ -163,6 +166,7 @@ Sage packages these ideas into a single, non-intrusive layer that sits on top of
 **Immediate**
 
 - Add support for a Sage-exclusive profile in Codex config (including args to add MCP servers and related setup)
+- Add CLI flags to further configure the Sage default profile (custom MCP servers, search providers, permission presets)
 
 **Tool support**
 
