@@ -76,6 +76,13 @@ type AppProps = {
   allowTellClaudeSend?: boolean;
 };
 
+/**
+ * Main Ink-based CLI application component that manages sessions, review processing,
+ * streaming UI, chat, and integrations with Claude and Codex.
+ *
+ * @param allowTellClaudeSend - When true, enables the "Tell Claude" action that sends the latest agent message to the Claude CLI; defaults to `false`.
+ * @returns The root Ink/React element for the Sage CLI application.
+ */
 export default function App({ allowTellClaudeSend = false }: AppProps) {
   const [screen, setScreen] = useState<Screen>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -1435,6 +1442,21 @@ function formatQueueLabel(job: ReviewQueueItem): string {
   return `${baseLabel}${partialSuffix}${originSuffix}`;
 }
 
+/**
+ * Produce the UI status line, keybinding hints, reviewing flag, optional subtitle, and remaining queued items for the current review state.
+ *
+ * @param currentJob - The job currently being processed, or `null` if none.
+ * @param queue - The full list of queued review jobs.
+ * @param isInitialReview - Whether an initial (full) review is currently running.
+ * @param manualSyncTriggered - Whether a manual sync action was recently triggered (affects label text).
+ * @param allowTellClaudeSend - Whether the "Tell Claude" action should be shown in keybindings.
+ * @returns An object containing:
+ *  - `status` — the primary status text shown in the UI,
+ *  - `keybindings` — concatenated keybinding hints to display,
+ *  - `isReviewing` — `true` if a review is currently active, `false` otherwise,
+ *  - `statusMessage` — a short subtitle used during active reviews (present only when reviewing),
+ *  - `queuedItems` — the list of remaining queue items (excludes the current job when one is active).
+ */
 function formatStatus(
   currentJob: ReviewQueueItem | null,
   queue: ReviewQueueItem[],
