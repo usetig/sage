@@ -160,6 +160,10 @@ Sage packages these ideas into a single, non-intrusive layer that sits on top of
 
 ### Roadmap
 
+**Immediate**
+
+- Add support for a Sage-exclusive profile in Codex config (including args to add MCP servers and related setup)
+
 **Tool support**
 
 - ✅ Claude Code – **Finished**
