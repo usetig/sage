@@ -1,7 +1,8 @@
 import path from 'path';
 import { promises as fs, existsSync } from 'fs';
 import { homedir } from 'os';
-import { execSync } from 'child_process';
+import { execSync, execFile } from 'child_process';
+import { promisify } from 'util';
 import chokidar, { FSWatcher } from 'chokidar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
@@ -37,6 +38,7 @@ import { DEFAULT_MODEL } from '../lib/models.js';
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'settings';
 
 const repositoryPath = path.resolve(process.cwd());
+const execFileAsync = promisify(execFile);
 
 type QueueSource = 'hook' | 'manual';
 
@@ -70,7 +72,11 @@ type StreamContext = {
   prompt?: string;
 };
 
-export default function App() {
+type AppProps = {
+  allowTellClaudeSend?: boolean;
+};
+
+export default function App({ allowTellClaudeSend = false }: AppProps) {
   const [screen, setScreen] = useState<Screen>('loading');
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
@@ -101,6 +107,7 @@ export default function App() {
 
   // Model selection state
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  const [isSendingToClaude, setIsSendingToClaude] = useState(false);
 
   // Debug mode state
   const [debugMode, setDebugMode] = useState(false);
@@ -118,6 +125,7 @@ export default function App() {
   const initialReviewDeferredRef = useRef(false);
   const streamEventsRef = useRef<StreamEvent[]>([]);
   const debugModeRef = useRef(false);
+  const claudeBinaryRef = useRef<string | null>(null);
 
   // Helper functions for debug-aware logging
   const addStatusMessage = useCallback((message: string, isDebug: boolean = false) => {
@@ -176,6 +184,7 @@ export default function App() {
         setScreen('error');
         return;
       }
+      claudeBinaryRef.current = claudeBinary;
 
       try {
         const versionOutput = execSync(`"${claudeBinary}" --version`, { encoding: 'utf8' }).trim();
@@ -270,6 +279,10 @@ export default function App() {
       }
       if (lower === 'm') {
         void handleManualSync();
+        return;
+      }
+      if (lower === 't') {
+        void handleTellClaude();
         return;
       }
       if (lower === 'c') {
@@ -533,6 +546,53 @@ export default function App() {
         setStatusMessages((prev) => [...prev, `Manual sync error: ${message}`]);
       }
       setManualSyncTriggered(false);
+    }
+  }
+
+  async function handleTellClaude() {
+    if (!allowTellClaudeSend) {
+      addStatusMessage('Tell Claude is disabled. Re-run with `sage --danger-allow-send` or set SAGE_ALLOW_SEND=1.');
+      return;
+    }
+
+    if (isSendingToClaude) return;
+    if (!activeSession) {
+      addStatusMessage('No active session selected to send to Claude.');
+      return;
+    }
+
+    const latestWithMessage = [...reviews].reverse().find((r) => r.critique.message_for_agent && r.critique.message_for_agent.trim());
+    if (!latestWithMessage) {
+      addStatusMessage('No message_for_agent available to send yet.');
+      return;
+    }
+
+    const message = latestWithMessage.critique.message_for_agent.trim();
+    const claudeBinary = claudeBinaryRef.current;
+    if (!claudeBinary) {
+      addStatusMessage('Claude CLI not available; cannot send message.');
+      return;
+    }
+
+    const sendCwd = activeSession.cwd ?? repositoryPath;
+
+    setIsSendingToClaude(true);
+    updateCurrentStatus('sending message to Claude...');
+
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        claudeBinary,
+        ['--resume', activeSession.sessionId, message, '--no-interactive', '--output-format', 'text'],
+        { cwd: sendCwd, maxBuffer: 1024 * 1024, encoding: 'utf8' },
+      );
+      const replyLine = (stdout || stderr || '').split('\n').find((line) => line.trim().length > 0);
+      addStatusMessage(replyLine ? `Sent to Claude. Reply: ${replyLine.trim()}` : 'Sent to Claude.');
+    } catch (err: any) {
+      const errMsg = err?.stderr?.toString()?.trim() || err?.message || 'Failed to send to Claude.';
+      addStatusMessage(`Send to Claude failed: ${errMsg}`);
+    } finally {
+      setIsSendingToClaude(false);
+      updateCurrentStatus(null);
     }
   }
 
@@ -1189,7 +1249,7 @@ export default function App() {
 
               <Box marginTop={1} flexDirection="column">
                 {(() => {
-                  const { status, keybindings, isReviewing, statusMessage, queuedItems } = formatStatus(currentJob, queue, isInitialReview, manualSyncTriggered);
+                  const { status, keybindings, isReviewing, statusMessage, queuedItems } = formatStatus(currentJob, queue, isInitialReview, manualSyncTriggered, allowTellClaudeSend);
 
                   const queueDisplay = queuedItems.length > 0 && (
                     <Box marginTop={1} flexDirection="column">
@@ -1380,17 +1440,20 @@ function formatStatus(
   queue: ReviewQueueItem[],
   isInitialReview: boolean,
   manualSyncTriggered: boolean,
+  allowTellClaudeSend: boolean,
 ): { status: string; keybindings: string; isReviewing: boolean; statusMessage?: string; queuedItems: ReviewQueueItem[] } {
   const manualSyncLabel = manualSyncTriggered ? 'M to trigger review manually (triggered)' : 'M to trigger review manually';
   const streamOverlayLabel = 'Ctrl+O to view stream';
+  const tellClaudeLabel = allowTellClaudeSend ? 'T to tell Claude' : null;
   const queuedItems = currentJob ? queue.slice(1) : queue;
   const pendingCount = queuedItems.length;
+  const joinKeybindings = (...items: Array<string | null>) => items.filter(Boolean).join(' • ');
 
   if (isInitialReview) {
     return {
       status: 'Status: ⏵ Running initial review...',
       statusMessage: 'running initial review...',
-      keybindings: `${streamOverlayLabel} • ${manualSyncLabel}`,
+      keybindings: joinKeybindings(streamOverlayLabel, tellClaudeLabel, manualSyncLabel),
       isReviewing: true,
       queuedItems,
     };
@@ -1403,7 +1466,7 @@ function formatStatus(
     return {
       status: `Status: ⏵ Reviewing response for ${jobLabel}${queueInfo}`,
       statusMessage: `reviewing response for ${jobLabel}${queueSuffix}`,
-      keybindings: `${streamOverlayLabel} • ${manualSyncLabel}`,
+      keybindings: joinKeybindings(streamOverlayLabel, tellClaudeLabel, manualSyncLabel),
       isReviewing: true,
       queuedItems,
     };
@@ -1411,7 +1474,7 @@ function formatStatus(
 
   return {
     status: 'Status: ⏺ Waiting for Claude response',
-    keybindings: `${streamOverlayLabel} • C to chat with Sage • ${manualSyncLabel}`,
+    keybindings: joinKeybindings(streamOverlayLabel, tellClaudeLabel, 'C to chat with Sage', manualSyncLabel),
     isReviewing: false,
     queuedItems,
   };
