@@ -7,3 +7,5 @@ dist/
 .debug/
 .cursor/worktrees.json
 external-docs/
+.claude/
+.quibbler/
