@@ -6,7 +6,6 @@ import chokidar, { FSWatcher } from 'chokidar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Key } from 'ink';
-import type { Thread } from '@openai/codex-sdk';
 import { listActiveSessions, extractTurns, type ActiveSession, type TurnSummary } from '../lib/jsonl.js';
 import {
   performInitialReview,
@@ -32,7 +31,8 @@ import { SettingsScreen } from './SettingsScreen.js';
 import { getQueueDir } from '../lib/paths.js';
 import { ensureHooksConfigured } from '../scripts/configureHooks.js';
 import { loadSettings, saveSettings } from '../lib/settings.js';
-import { DEFAULT_MODEL } from '../lib/models.js';
+import { DEFAULT_MODEL, buildModelOptionsFromProviders, type ModelOption, FALLBACK_MODELS } from '../lib/models.js';
+import { getOpencodeClient, listProviders } from '../lib/opencode.js';
 
 type Screen = 'loading' | 'error' | 'session-list' | 'running' | 'chat' | 'settings';
 
@@ -75,6 +75,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>(FALLBACK_MODELS);
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [currentStatusMessage, setCurrentStatusMessage] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
@@ -108,7 +109,7 @@ export default function App() {
   const queueRef = useRef<ReviewQueueItem[]>([]);
   const workerRunningRef = useRef(false);
   const watcherRef = useRef<FSWatcher | null>(null);
-  const codexThreadRef = useRef<Thread | null>(null);
+  const opencodeSessionRef = useRef<string | null>(null);
   const lastTurnSignatureRef = useRef<string | null>(null);
   const manualSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const resumeStatusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -135,7 +136,7 @@ export default function App() {
       // Load user settings (non-blocking on failure)
       try {
         const settings = await loadSettings();
-        setSelectedModel(settings.selectedModel);
+        setSelectedModel(settings.selectedModel ?? DEFAULT_MODEL);
         setDebugMode(settings.debugMode);
         debugModeRef.current = settings.debugMode;
       } catch {
@@ -199,19 +200,21 @@ export default function App() {
         return;
       }
 
-      // Check if Codex CLI is installed
+      // Check OpenCode availability
       try {
-        execSync('which codex', { stdio: 'ignore' });
-      } catch {
-        setError('Codex CLI not found. Install it with: npm install -g @openai/codex');
-        setScreen('error');
-        return;
-      }
-
-      // Check if Codex is authenticated (env var or auth file)
-      const authFile = path.join(homedir(), '.codex', 'auth.json');
-      if (!process.env.CODEX_API_KEY && !existsSync(authFile)) {
-        setError('Codex not authenticated. Run `codex` to sign in, or set CODEX_API_KEY.');
+        await getOpencodeClient();
+        try {
+          const providers = await listProviders();
+          const options = buildModelOptionsFromProviders(providers);
+          if (options.length) {
+            setAvailableModels(options);
+          }
+        } catch (err) {
+          // Providers listing can fail if server lacks auth; fall back silently
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Could not connect to OpenCode. Start it with `opencode serve`.';
+        setError(message);
         setScreen('error');
         return;
       }
@@ -404,11 +407,12 @@ export default function App() {
       const lastReviewedUuid = cached?.lastTurnSignature ?? null;
       initialReviewDeferredRef.current = false;
 
+      const modelToUse = selectedModel || DEFAULT_MODEL;
       const result = await performInitialReview(
         { sessionId: session.sessionId, transcriptPath: session.transcriptPath, lastReviewedUuid },
         (message, isDebug) => updateCurrentStatus(message, isDebug),
         appendStreamEvent,
-        selectedModel,
+        modelToUse,
       );
 
       const streamPrompt = result.latestPrompt
@@ -416,12 +420,11 @@ export default function App() {
         : session.title || undefined;
       finalizeStream({ sessionId: session.sessionId, prompt: streamPrompt }, result.streamEvents);
 
-      codexThreadRef.current = result.thread;
-      const initialThreadId = result.thread?.id ?? null;
-      if (initialThreadId) {
-        setThreadId(initialThreadId);
+      opencodeSessionRef.current = result.opencodeSessionId;
+      if (result.opencodeSessionId) {
+        setThreadId(result.opencodeSessionId);
       }
-      const deferredInitialReview = result.thread === null && result.isFreshCritique === false;
+      const deferredInitialReview = result.opencodeSessionId === null && result.isFreshCritique === false;
       initialReviewDeferredRef.current = deferredInitialReview;
 
       if (reviewCacheRef.current?.lastTurnSignature) {
@@ -537,8 +540,8 @@ export default function App() {
   }
 
   async function handleChatSubmit(question: string) {
-    if (!codexThreadRef.current) {
-      setCurrentStatusMessage('No active Codex thread for chat.');
+    if (!opencodeSessionRef.current) {
+      setCurrentStatusMessage('No active OpenCode session for chat.');
       return;
     }
 
@@ -562,10 +565,11 @@ export default function App() {
 
     try {
       const { chatWithSage } = await import('../lib/review.js');
+      const modelToUse = selectedModel || DEFAULT_MODEL;
       const { response } = await chatWithSage(
-        codexThreadRef.current,
+        opencodeSessionRef.current,
         question,
-        activeSession!.sessionId,
+        modelToUse,
       );
 
       // Add Sage's response to chat history
@@ -630,7 +634,7 @@ export default function App() {
     setActiveSession(null);
     activeSessionRef.current = null;
     setIsInitialReview(false);
-    codexThreadRef.current = null;
+    opencodeSessionRef.current = null;
     setThreadId(null);
     lastTurnSignatureRef.current = null;
     reviewCacheRef.current = null;
@@ -717,11 +721,12 @@ export default function App() {
       setCurrentJob(job);
 
       const shouldRunDeferredInitial =
-        !codexThreadRef.current || initialReviewDeferredRef.current;
+        !opencodeSessionRef.current || initialReviewDeferredRef.current;
 
       if (shouldRunDeferredInitial) {
         beginStream({ sessionId: job.sessionId, prompt: job.promptPreview });
         try {
+          const modelToUse = selectedModel || DEFAULT_MODEL;
           const deferredResult = await performInitialReview(
             {
               sessionId: job.sessionId,
@@ -730,7 +735,7 @@ export default function App() {
             },
             (message, isDebug) => updateCurrentStatus(message, isDebug),
             appendStreamEvent,
-            selectedModel,
+            modelToUse,
           );
 
           const deferredPrompt = deferredResult.latestPrompt
@@ -738,10 +743,9 @@ export default function App() {
             : job.promptPreview;
           finalizeStream({ sessionId: job.sessionId, prompt: deferredPrompt }, deferredResult.streamEvents);
 
-          codexThreadRef.current = deferredResult.thread;
-          const deferredThreadId = deferredResult.thread?.id ?? null;
-          if (deferredThreadId) {
-            setThreadId(deferredThreadId);
+          opencodeSessionRef.current = deferredResult.opencodeSessionId;
+          if (deferredResult.opencodeSessionId) {
+            setThreadId(deferredResult.opencodeSessionId);
           }
 
           if (deferredResult.turnSignature) {
@@ -749,7 +753,7 @@ export default function App() {
           }
 
           const stillDeferred =
-            deferredResult.thread === null && deferredResult.isFreshCritique === false;
+            deferredResult.opencodeSessionId === null && deferredResult.isFreshCritique === false;
           initialReviewDeferredRef.current = stillDeferred;
 
           if (deferredResult.isFreshCritique) {
@@ -801,7 +805,7 @@ export default function App() {
       }
 
       beginStream({ sessionId: job.sessionId, prompt: job.promptPreview });
-      const currentThreadId = codexThreadRef.current?.id ?? null;
+      const currentThreadId = opencodeSessionRef.current;
       if (currentThreadId) {
         setThreadId(currentThreadId);
       }
@@ -810,10 +814,11 @@ export default function App() {
           {
             sessionId: job.sessionId,
             transcriptPath: job.transcriptPath,
-            thread: codexThreadRef.current,
+            opencodeSessionId: opencodeSessionRef.current,
             turns: job.turns,
             latestTurnSignature: job.latestTurnSignature,
             isPartial: job.isPartial,
+            model: selectedModel || DEFAULT_MODEL,
           },
           (message, isDebug) => updateCurrentStatus(message, isDebug),
           appendStreamEvent,
@@ -1099,7 +1104,7 @@ export default function App() {
       {screen === 'running' && debugMode && (
         <Box marginTop={1}>
           <Text dimColor>
-            Codex thread: {threadId ?? 'Establishing…'}
+            OpenCode session: {threadId ?? 'Establishing…'}
           </Text>
         </Box>
       )}
@@ -1159,6 +1164,7 @@ export default function App() {
             <SettingsScreen
               currentModel={selectedModel}
               debugMode={debugMode}
+              models={availableModels}
               onSelectModel={handleModelSelect}
               onToggleDebugMode={handleToggleDebugMode}
               onBack={() => setScreen('session-list')}

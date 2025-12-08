@@ -1,24 +1,27 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Key } from 'ink';
-import { AVAILABLE_MODELS, type ModelConfig } from '../lib/models.js';
+import { FALLBACK_MODELS, type ModelOption } from '../lib/models.js';
 
 interface SettingsScreenProps {
   currentModel: string;
   debugMode: boolean;
+  models: ModelOption[];
   onSelectModel: (modelId: string) => void;
   onToggleDebugMode: () => void;
   onBack: () => void;
 }
 
 // Total selectable items: models + 1 debug toggle
-const DEBUG_TOGGLE_INDEX = AVAILABLE_MODELS.length;
+const DEBUG_TOGGLE_INDEX = (modelsLength: number) => modelsLength;
 
-export function SettingsScreen({ currentModel, debugMode, onSelectModel, onToggleDebugMode, onBack }: SettingsScreenProps) {
-  const currentModelIndex = AVAILABLE_MODELS.findIndex((m) => m.id === currentModel);
+export function SettingsScreen({ currentModel, debugMode, models, onSelectModel, onToggleDebugMode, onBack }: SettingsScreenProps) {
+  const modelOptions = models.length ? models : FALLBACK_MODELS;
+  const currentModelIndex = modelOptions.findIndex((m) => m.id === currentModel);
   const [selectedIndex, setSelectedIndex] = useState(currentModelIndex >= 0 ? currentModelIndex : 0);
 
-  const totalItems = AVAILABLE_MODELS.length + 1; // models + debug toggle
+  const debugIndex = DEBUG_TOGGLE_INDEX(modelOptions.length);
+  const totalItems = modelOptions.length + 1; // models + debug toggle
 
   useInput((input: string, key: Key) => {
     if (key.escape || input.toLowerCase() === 'b') {
@@ -37,10 +40,10 @@ export function SettingsScreen({ currentModel, debugMode, onSelectModel, onToggl
     }
 
     if (key.return) {
-      if (selectedIndex === DEBUG_TOGGLE_INDEX) {
+      if (selectedIndex === debugIndex) {
         onToggleDebugMode();
       } else {
-        const model = AVAILABLE_MODELS[selectedIndex];
+        const model = modelOptions[selectedIndex];
         onSelectModel(model.id);
       }
       return;
@@ -55,7 +58,7 @@ export function SettingsScreen({ currentModel, debugMode, onSelectModel, onToggl
       <Box marginTop={1} flexDirection="column">
         <Text>Select Sage Model:</Text>
         <Box marginTop={1} flexDirection="column">
-          {AVAILABLE_MODELS.map((model, index) => (
+          {modelOptions.map((model, index) => (
             <ModelRow
               key={model.id}
               model={model}
@@ -69,7 +72,7 @@ export function SettingsScreen({ currentModel, debugMode, onSelectModel, onToggl
       <Box marginTop={1} flexDirection="column">
         <Text>Debug Mode:</Text>
         <Box marginTop={1}>
-          <Text inverse={selectedIndex === DEBUG_TOGGLE_INDEX}>
+          <Text inverse={selectedIndex === debugIndex}>
             {debugMode ? '✓ ON' : '  OFF'}
           </Text>
           <Text dimColor> (shows verbose status messages)</Text>
@@ -84,14 +87,14 @@ export function SettingsScreen({ currentModel, debugMode, onSelectModel, onToggl
 }
 
 interface ModelRowProps {
-  model: ModelConfig;
+  model: ModelOption;
   isSelected: boolean;
   isCurrent: boolean;
 }
 
 function ModelRow({ model, isSelected, isCurrent }: ModelRowProps) {
   const checkmark = isCurrent ? '✓ ' : '  ';
-  const label = `${checkmark}${model.name}`;
+  const label = `${checkmark}${model.label}`;
 
   return (
     <Box>

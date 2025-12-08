@@ -82,4 +82,3 @@ function formatTimestamp(value: number): string {
   const seconds = `${date.getSeconds()}`.padStart(2, '0');
   return `${hours}:${minutes}:${seconds}`;
 }
-

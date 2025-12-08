@@ -4,7 +4,7 @@ import os from 'os';
 import { DEFAULT_MODEL } from './models.js';
 
 export interface SageSettings {
-  selectedModel: string;
+  selectedModel: string | null;
   debugMode: boolean;
 }
 

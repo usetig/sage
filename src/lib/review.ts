@@ -1,4 +1,3 @@
-import type { Thread } from '@openai/codex-sdk';
 import {
   runFollowupReview,
   runInitialReview,
@@ -6,11 +5,11 @@ import {
   buildFollowupPromptPayload,
   type CritiqueResponse,
   type StreamEvent,
-  codexInstance,
 } from './codex.js';
 import { extractTurns, type TurnSummary } from './jsonl.js';
 import { writeDebugReviewArtifact } from './debug.js';
-import { getOrCreateThread, loadThreadMetadata, saveThreadMetadata, updateThreadTurnCount } from './threads.js';
+import { getOrCreateOpencodeSession, loadThreadMetadata, saveThreadMetadata, updateThreadTurnCount } from './threads.js';
+import { DEFAULT_MODEL } from './models.js';
 
 export interface ReviewResult {
   critique: CritiqueResponse;
@@ -28,7 +27,7 @@ export interface ReviewResult {
 }
 
 export type InitialReviewResult = ReviewResult & {
-  thread: Thread | null;
+  opencodeSessionId: string | null;
   turns: TurnSummary[];
 };
 
@@ -57,7 +56,7 @@ export async function performInitialReview(
       transcriptPath,
       completedAt: new Date().toISOString(),
       latestPrompt: undefined,
-      thread: null,
+      opencodeSessionId: null,
       turns,
       debugInfo: undefined,
       turnSignature: lastReviewedUuid ?? undefined,
@@ -78,7 +77,7 @@ export async function performInitialReview(
       transcriptPath,
       completedAt: new Date().toISOString(),
       latestPrompt: latestTurn.user,
-      thread: null,
+      opencodeSessionId: null,
       turns,
       debugInfo: undefined,
       turnSignature: latestTurnUuid ?? undefined,
@@ -102,9 +101,10 @@ export async function performInitialReview(
   });
 
   const metadata = await loadThreadMetadata(sessionId);
-  const thread = await getOrCreateThread(codexInstance, sessionId, onProgress, model);
+  const opencodeSession = await getOrCreateOpencodeSession(sessionId, onProgress, model);
 
-  const isResumedThread = metadata !== null;
+  const modelToUse = model || metadata?.model || DEFAULT_MODEL;
+
   const currentTurnCount = turns.length;
   const lastReviewedTurnCount = metadata?.lastReviewedTurnCount ?? 0;
   const hasNewTurns = currentTurnCount > lastReviewedTurnCount;
@@ -113,8 +113,8 @@ export async function performInitialReview(
   let isFreshCritique = true;
   let streamEvents: StreamEvent[] = [];
 
-  if (isResumedThread && !hasNewTurns) {
-    onProgress?.('Resuming Sage thread...', false);
+  if (metadata && !hasNewTurns) {
+    onProgress?.('Resuming Sage session...', false);
     critique = {
       verdict: 'Approved',
       why: 'Session previously reviewed. Entering continuous mode with existing context.',
@@ -122,19 +122,17 @@ export async function performInitialReview(
       message_for_agent: '',
     };
     isFreshCritique = false;
-    streamEvents = [];
-  } else if (isResumedThread && hasNewTurns) {
+  } else if (metadata && hasNewTurns) {
     onProgress?.('examining new dialogue...', false);
     const newTurns = turns.slice(lastReviewedTurnCount);
 
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+      setTimeout(() => reject(new Error('OpenCode review timed out after 5 minutes')), 5 * 60 * 1000);
     });
 
     const reviewPromise = runFollowupReview(
-      thread,
       { sessionId, newTurns },
-      { onEvent: onStreamEvent },
+      { onEvent: onStreamEvent, model: modelToUse, opencodeSessionId: opencodeSession.id },
     );
     const result = await Promise.race([reviewPromise, timeoutPromise]);
     critique = result.critique;
@@ -146,7 +144,7 @@ export async function performInitialReview(
     onProgress?.('analyzing codebase context...', false);
 
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+      setTimeout(() => reject(new Error('OpenCode review timed out after 5 minutes')), 5 * 60 * 1000);
     });
 
     const reviewPromise = runInitialReview(
@@ -156,10 +154,9 @@ export async function performInitialReview(
         latestTurnSummary: latestTurn ?? undefined,
       },
       {
-        thread,
-        promptPayload,
         onEvent: onStreamEvent,
-        model,
+        model: modelToUse,
+        opencodeSessionId: opencodeSession.id,
       },
     );
 
@@ -168,22 +165,19 @@ export async function performInitialReview(
     streamEvents = result.streamEvents;
     isFreshCritique = true;
 
-    const threadId = thread.id;
-    if (threadId) {
-      await saveThreadMetadata(sessionId, threadId, currentTurnCount);
-    } else {
-      onProgress?.('Warning: thread ID not available for persistence');
-    }
+    await saveThreadMetadata(sessionId, opencodeSession.id, modelToUse, currentTurnCount);
   }
 
   const completedAt = new Date().toISOString();
+
+  onProgress?.(`reviewed latest turn: ${latestPromptPreview}`, true);
 
   return {
     critique,
     transcriptPath,
     completedAt,
     latestPrompt: latestTurn?.user,
-    thread,
+    opencodeSessionId: opencodeSession.id,
     turns,
     debugInfo: {
       artifactPath,
@@ -198,10 +192,11 @@ export async function performInitialReview(
 export interface IncrementalReviewRequest {
   sessionId: string;
   transcriptPath: string;
-  thread: Thread | null;
+  opencodeSessionId: string | null;
   turns: TurnSummary[];
   latestTurnSignature: string | null;
   isPartial?: boolean;
+  model?: string;
 }
 
 export async function performIncrementalReview(
@@ -209,7 +204,7 @@ export async function performIncrementalReview(
   onProgress?: (message: string, isDebug?: boolean) => void,
   onStreamEvent?: (event: StreamEvent) => void,
 ): Promise<ReviewResult> {
-  const { sessionId, transcriptPath, thread, turns, latestTurnSignature, isPartial } = request;
+  const { sessionId, transcriptPath, opencodeSessionId, turns, latestTurnSignature, isPartial, model } = request;
   if (!turns.length) {
     throw new Error('No new turns provided for incremental review.');
   }
@@ -224,21 +219,22 @@ export async function performIncrementalReview(
     reviewType: 'incremental',
   });
 
-  if (!thread) {
-    throw new Error('No active Codex thread to continue the review.');
+  if (!opencodeSessionId) {
+    throw new Error('No active OpenCode session to continue the review.');
   }
 
   onProgress?.('Sage is thinking...', false);
 
+  const modelToUse = model || DEFAULT_MODEL;
+
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Codex review timed out after 5 minutes')), 5 * 60 * 1000);
+    setTimeout(() => reject(new Error('OpenCode review timed out after 5 minutes')), 5 * 60 * 1000);
   });
 
   const { critique, streamEvents } = await Promise.race([
     runFollowupReview(
-      thread,
       { sessionId, newTurns: turns, isPartial },
-      { promptPayload, onEvent: onStreamEvent },
+      { onEvent: onStreamEvent, model: modelToUse, opencodeSessionId },
     ),
     timeoutPromise,
   ]);
@@ -266,24 +262,22 @@ function previewText(text: string, maxLength = 160): string {
 }
 
 export async function chatWithSage(
-  thread: Thread | null,
+  opencodeSessionId: string | null,
   userQuestion: string,
-  sessionId: string,
+  model: string,
 ): Promise<{ response: string }> {
-  if (!thread) {
-    throw new Error('No active Codex thread for chat.');
+  if (!opencodeSessionId) {
+    throw new Error('No active OpenCode session for chat.');
   }
 
-  const prompt = `You are now chatting directly with the developer. Respond conversationally - you don't need to follow the structured output schema from your reviews.
-
-${userQuestion}`;
-
+  const prompt = `You are now chatting directly with the developer. Respond conversationally; do not use the structured critique schema.\n\n${userQuestion}`;
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('Chat timed out after 2 minutes')), 2 * 60 * 1000);
   });
 
-  const chatPromise = thread.run(prompt);
-  const turn = await Promise.race([chatPromise, timeoutPromise]);
-
-  return { response: turn.finalResponse as string };
+  // Use a direct prompt so chat is free-form and not tied to the critique schema
+  const { sendPrompt } = await import('./opencode.js');
+  const directCall = sendPrompt({ sessionId: opencodeSessionId, prompt, model });
+  const result = await Promise.race([directCall, timeoutPromise]);
+  return { response: result.text };
 }

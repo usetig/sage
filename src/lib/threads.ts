@@ -1,16 +1,15 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import type { Thread } from '@openai/codex-sdk';
-import { Codex } from '@openai/codex-sdk';
-import { getConfiguredThreadOptions } from './codex.js';
+import { ensureSession } from './opencode.js';
 import { getThreadsDir } from './paths.js';
 
-interface ThreadMetadata {
-  threadId: string;
-  sessionId: string;
+export interface ThreadMetadata {
+  sessionId: string; // Claude session id (human conversation)
+  opencodeSessionId: string;
   timestamp: number;
   lastUsed: number;
-  lastReviewedTurnCount: number; // Track how many turns were last reviewed
+  lastReviewedTurnCount: number;
+  model: string;
 }
 
 const THREADS_DIR = getThreadsDir();
@@ -31,14 +30,16 @@ async function ensureThreadsDir(): Promise<void> {
  */
 export async function saveThreadMetadata(
   sessionId: string,
-  threadId: string,
+  opencodeSessionId: string,
+  model: string,
   turnCount: number = 0,
 ): Promise<void> {
   await ensureThreadsDir();
   
   const metadata: ThreadMetadata = {
-    threadId,
     sessionId,
+    opencodeSessionId,
+    model,
     timestamp: Date.now(),
     lastUsed: Date.now(),
     lastReviewedTurnCount: turnCount,
@@ -70,7 +71,25 @@ export async function loadThreadMetadata(sessionId: string): Promise<ThreadMetad
   
   try {
     const content = await fs.readFile(filePath, 'utf8');
-    const metadata = JSON.parse(content) as ThreadMetadata;
+    const parsed = JSON.parse(content) as Partial<ThreadMetadata> & { threadId?: string };
+    if (!parsed.opencodeSessionId && parsed.threadId) {
+      // Legacy codex metadata – treat as missing
+      return null;
+    }
+
+    const opencodeSessionId = parsed.opencodeSessionId ?? '';
+    if (!opencodeSessionId) {
+      return null;
+    }
+
+    const metadata: ThreadMetadata = {
+      sessionId,
+      opencodeSessionId,
+      timestamp: parsed.timestamp ?? Date.now(),
+      lastUsed: parsed.lastUsed ?? Date.now(),
+      lastReviewedTurnCount: parsed.lastReviewedTurnCount ?? 0,
+      model: parsed.model ?? '',
+    };
     
     // Update last used timestamp
     metadata.lastUsed = Date.now();
@@ -97,39 +116,27 @@ export async function deleteThreadMetadata(sessionId: string): Promise<void> {
 }
 
 /**
- * Gets or creates a Codex thread for a session
- * If a thread exists for this session, it will be resumed
- * Otherwise, a new thread will be created
+ * Gets or creates an OpenCode session for a Claude session.
  */
-export async function getOrCreateThread(
-  codex: Codex,
+export async function getOrCreateOpencodeSession(
   sessionId: string,
   onProgress?: (message: string) => void,
   model?: string,
-): Promise<Thread> {
+): Promise<{ id: string }> {
   const metadata = await loadThreadMetadata(sessionId);
 
-  if (metadata) {
+  if (metadata && metadata.opencodeSessionId) {
     onProgress?.('loading previous context...');
     try {
-      const thread = codex.resumeThread(metadata.threadId, getConfiguredThreadOptions(model));
-      return thread;
-    } catch (err) {
-      // Thread couldn't be resumed (might have been deleted on Codex side)
+      const session = await ensureSession(metadata.opencodeSessionId, sessionId);
+      return { id: session.id };
+    } catch {
       await deleteThreadMetadata(sessionId);
     }
   }
 
-  // Create new thread
   onProgress?.('initializing review agent...');
-  const thread = codex.startThread(getConfiguredThreadOptions(model));
-
-  // Thread ID might not be immediately available - this is okay
-  // We'll save metadata after the first successful review instead
-  if (thread.id) {
-    await saveThreadMetadata(sessionId, thread.id);
-  }
-  
-  return thread;
+  const session = await ensureSession(undefined, sessionId);
+  await saveThreadMetadata(sessionId, session.id, model ?? '', 0);
+  return { id: session.id };
 }
-
