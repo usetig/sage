@@ -2,7 +2,6 @@
   <a href="https://discord.gg/bsFz2ppgMU">
     <img src="https://img.shields.io/badge/Join%20us%20on-Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join our Discord" />
   </a>
-  <img src="https://img.shields.io/badge/Backed%20by-Y%20Combinator-F26522?style=for-the-badge" alt="Backed by Y Combinator" />
 </p>
 
 # Sage
